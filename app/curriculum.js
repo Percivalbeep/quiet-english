@@ -61,6 +61,8 @@ export const lessons = units.map((u,index)=>{
     return [{id:`${id}-extra-gap-focus-${i}`,type:'input',skill:'写',section:'表达填空',prompt:`表达「${zh}」，补上缺少的词。`,...gap,explanation:`完整表达：${en}`},
       {id:`${id}-order-${i}`,type:'order',skill:'表达准备',section:'组句练习',prompt:`把词语排成一句话，表达「${zh}」。`,tokens:rotated(en.split(' ').slice().reverse(),i+1),answer:en,explanation:`可以这样说：${en}`}];
   });
+  for(const q of questions)q.knowledgeId=id+'-phrase-'+(q.id.endsWith('-read')?1:q.id.endsWith('-respond')||q.id.endsWith('-listen2')?2:0);
+  for(const q of extraQuestions)q.knowledgeId=id+'-extra-'+q.id.at(-1);
   const dialogueText=content.dialogue.map(d=>d[1]).join('\n');
   const dialogueQuestions=[1,5].map((turn,i)=>({id:`${id}-dialogue-${i}`,type:'listen',skill:'听',section:'情境对话',prompt:i?'听完整段对话，最后一句表达什么意思？':'听完整段对话，第二位说话者第一次回应表达什么意思？',audioText:dialogueText,options:rotated([content.dialogue[turn][2],content.dialogue[(turn+2)%6][2],content.dialogue[(turn+4)%6][2]],index+i),answer:content.dialogue[turn][2],explanation:`对应原句是：${content.dialogue[turn][1]}` }));
   const readingQuestions=content.facts.map(([prompt,answer,distractors],i)=>({id:`${id}-reading-${i}`,type:'reading',skill:'读',section:'短文任务',prompt,passage:content.reading,translation:content.translation,options:rotated([answer,...distractors],index+i),answer,explanation:`根据短文，应选「${answer}」。${content.translation}`}));
