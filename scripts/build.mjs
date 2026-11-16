@@ -1,4 +1,4 @@
-import {cp,mkdir,rm,readFile,writeFile} from 'node:fs/promises';
+import {cp,mkdir,rm,readFile,writeFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {runInNewContext} from 'node:vm';
@@ -34,12 +34,18 @@ if(configuredKey){
 // Give changed modules explicit versions so a browser cannot keep using an
 // older cached sign-in implementation after a deployment.
 const version=async relative=>createHash('sha256').update(await readFile(path.join(root,'dist',relative))).digest('hex').slice(0,12);
-const mainPath=path.join(root,'dist/app/main.js');
-let main=await readFile(mainPath,'utf8');
-for(const name of ['core.js','cloud.js','curriculum.js']){
-  main=main.replaceAll(`'./${name}'`,`'./${name}?v=${await version('app/'+name)}'`);
+const emitted=new Set(),visiting=new Set();
+async function emitModule(name){
+  if(emitted.has(name))return;
+  if(visiting.has(name))throw new Error('Unexpected module dependency cycle: '+name);
+  visiting.add(name);
+  const destination=path.join(root,'dist/app',name);
+  let code=await readFile(destination,'utf8');
+  const imports=[...code.matchAll(/from (['"])\.\/([a-zA-Z0-9-]+\.js)\1/g)];
+  for(const match of imports){await emitModule(match[2]);code=code.replaceAll(`./${match[2]}${match[1]}`,`./${match[2]}?v=${await version('app/'+match[2])}${match[1]}`);}
+  await writeFile(destination,code);visiting.delete(name);emitted.add(name);
 }
-await writeFile(mainPath,main);
+for(const file of await readdir(path.join(root,'dist/app')))if(file.endsWith('.js'))await emitModule(file);
 const htmlPath=path.join(root,'dist/index.html');
 let html=await readFile(htmlPath,'utf8');
 for(const relative of ['config.js','app/boot.js','app/main.js','app/style.css']){

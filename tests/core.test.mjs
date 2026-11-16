@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {lessons,audioPath} from '../app/curriculum.js';
+import {lessons,audioPath,reviewQuestions} from '../app/curriculum.js';
 import {DAY,createEvent,isCorrect,LocalStore,SyncEngine,lessonStats,reviewState,mergeEvents} from '../app/core.js';
 import {stat,readFile} from 'node:fs/promises';
 const storage=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};
@@ -11,8 +11,9 @@ test('normalization accepts case, curly apostrophes and terminal punctuation, no
 });
 test('24 lessons have distinct question IDs, usable distractors and nonempty audio assets',async()=>{
   assert.equal(lessons.length,24);const ids=new Set();
-  for(const l of lessons){assert.equal(l.questions.length,5);for(const q of l.questions){assert.ok(!ids.has(q.id));ids.add(q.id);if(q.options){assert.ok(q.options.includes(q.answer));assert.ok(new Set(q.options).size>=2);}}
-    for(const phrase of l.phrases){const file=new URL('../'+audioPath(phrase.en),import.meta.url);assert.ok((await stat(file)).size>1000,file.pathname);}
+  for(const l of lessons){assert.equal(l.questions.length,30);assert.equal(l.vocabulary.length,8);assert.equal(l.phrases.length,5);assert.equal(l.dialogue.length,6);assert.ok(l.reading.split(' ').length>=35);for(const q of l.questions){assert.ok(!ids.has(q.id));ids.add(q.id);if(q.options){assert.ok(q.options.includes(q.answer));assert.ok(new Set(q.options).size>=2);}if(q.type==='order')assert.deepEqual(q.tokens.slice().sort(),q.answer.split(' ').sort());}
+    for(const text of [...l.phrases.map(p=>p.en),...l.vocabulary.map(w=>w.en),l.dialogueText]){assert.ok(audioPath(text),'Missing audio: '+text);const file=new URL('../'+audioPath(text),import.meta.url);assert.ok((await stat(file)).size>1000,file.pathname);}
+    assert.ok(reviewQuestions(l).length<=10);assert.ok(reviewQuestions(l).every(q=>l.questions.some(original=>original.id===q.id)));
   }
 });
 test('retries preserve first result, latest performance and separate oral self-report',()=>{
@@ -29,6 +30,18 @@ test('review is due after an interval; a missed review shortens subsequent spaci
   assert.equal(reviewState(l,events,'learner').due,base+4*DAY);
   events.push(event('review',{passed:false},l.id,undefined,new Date(base+4*DAY)));
   assert.equal(reviewState(l,events,'learner').due,base+5*DAY);
+});
+test('expanding an old five-question lesson keeps its answers and anchors the new review to the new completion',()=>{
+  const l=lessons[0],original=l.questions.filter(q=>q.section==='基础表达');const old=original.map(q=>event('answer',{questionId:q.id,correct:true}));old.push(event('complete'));
+  assert.equal(lessonStats(l,old,'learner').answered,5);assert.equal(lessonStats(l,old,'learner').legacyComplete,true);assert.equal(lessonStats(l,old,'learner').complete,false);
+  const upgraded=[...old,...l.questions.filter(q=>!original.includes(q)).map(q=>event('answer',{questionId:q.id,correct:true}))];const now=new Date('2026-11-20T01:00:00Z');upgraded.push(event('complete',{curriculumVersion:2},l.id,undefined,now));
+  assert.equal(reviewState(l,upgraded,'learner',now.getTime()).due,now.getTime()+DAY);
+});
+test('short reviews rotate across every vocabulary item and prioritize a previous mistake',()=>{
+  const l=lessons[0],covered=new Set();for(let round=0;round<4;round++)for(const q of reviewQuestions(l,{round}))if(q.wordId)covered.add(q.wordId);
+  assert.equal(covered.size,l.vocabulary.length);
+  const difficult=l.questions.find(q=>q.wordId===l.vocabulary.at(-1).id);
+  assert.ok(reviewQuestions(l,{weakQuestionIds:[difficult.id]}).some(q=>q.id===difficult.id));
 });
 test('duplicate records are counted once and an acknowledged upload never removes a newly queued event',()=>{
   const store=new LocalStore(storage(),'test'),a=event('answer'),b=event('complete');store.append(a);store.append(a);assert.equal(store.read().events.length,1);store.append(b);store.reconcile([a],[a.id]);assert.deepEqual(store.read().outbox,[b.id]);assert.equal(mergeEvents([a],[a]).length,1);

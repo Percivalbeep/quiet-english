@@ -7,7 +7,7 @@ create table if not exists public.qe_members (
   display_name text not null check (char_length(display_name) between 1 and 60),
   created_at timestamptz not null default now()
 );
-create unique index if not exists qe_one_role_per_family on public.qe_members(family_id,role);
+create unique index if not exists qe_one_teacher_per_family on public.qe_members(family_id) where role='teacher';
 
 create table if not exists public.qe_events (
   id uuid primary key,
@@ -44,10 +44,13 @@ grant usage, select on sequence public.qe_events_seq_seq to authenticated;
 
 drop policy if exists qe_read_members on public.qe_members;
 create policy qe_read_members on public.qe_members for select to authenticated
-using (family_id=(select public.qe_my_family()));
+using (family_id=(select public.qe_my_family()) and
+  ((select public.qe_my_role())='teacher' or user_id=(select auth.uid()) or role='teacher'));
 drop policy if exists qe_read_events on public.qe_events;
 create policy qe_read_events on public.qe_events for select to authenticated
-using (family_id=(select public.qe_my_family()));
+using (family_id=(select public.qe_my_family()) and
+  ((select public.qe_my_role())='teacher' or actor_id=(select auth.uid())
+    or (kind in ('assignment','feedback') and payload->>'targetId'=(select auth.uid())::text)));
 drop policy if exists qe_write_own_events on public.qe_events;
 create policy qe_write_own_events on public.qe_events for insert to authenticated
 with check (

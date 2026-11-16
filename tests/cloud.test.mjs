@@ -9,6 +9,28 @@ test('browser-native fetch receives the global receiver, not the CloudClient ins
   const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},memory(),browserFetch);
   await cloud.request('/auth/v1/health');assert.equal(called,true);
 });
+test('self-registration sends only profile metadata and keeps an immediate session',async()=>{
+  const disk=memory();let sent;
+  const fetcher=async(url,options)=>{sent={url,body:JSON.parse(options.body)};return new Response(JSON.stringify({access_token:'test-access',refresh_token:'test-refresh',expires_in:3600,user:{id:'new-learner'}}));};
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},disk,fetcher);
+  const result=await cloud.signUp('learner@example.test','test-only-password','Learner','https://example.test/?invite=abc');
+  assert.equal(result.needsConfirmation,false);assert.equal(cloud.session.user.id,'new-learner');assert.equal(sent.body.data.display_name,'Learner');assert.equal(sent.body.data.role,undefined);assert.match(sent.url,/signup\?redirect_to=/);
+});
+test('confirmation-required signup never pretends to be logged in',async()=>{
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},memory(),async()=>new Response(JSON.stringify({id:'new-learner'})));
+  assert.equal((await cloud.signUp('learner@example.test','test-only-password','Learner','https://example.test')).needsConfirmation,true);assert.equal(cloud.session,null);
+});
+test('invitation RPC is authenticated and does not let the caller choose a role or family',async()=>{
+  const disk=memory(),calls=[];const fetcher=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify({joined:true}));};
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},disk,fetcher);
+  cloud.saveSession({access_token:'test-access',refresh_token:'test-refresh',expires_in:3600,user:{id:'new-learner'}});
+  await cloud.joinInvite('a'.repeat(32),'Learner');const body=JSON.parse(calls[0].options.body);assert.deepEqual(body,{invite_code:'a'.repeat(32),learner_name:'Learner'});assert.equal(calls[0].options.headers.Authorization,'Bearer test-access');
+});
+test('an email callback validates the token before preserving a session',async()=>{
+  const disk=memory();let requested;
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},disk,async(url,options)=>{requested={url,options};return new Response(JSON.stringify({id:'verified-user'}));});
+  await cloud.acceptCallback(new URLSearchParams({access_token:'callback-test',refresh_token:'refresh-test',expires_in:'3600'}));assert.match(requested.url,/auth\/v1\/user$/);assert.equal(cloud.session.user.id,'verified-user');
+});
 // An API-contract fixture, not a substitute for checking deployed Supabase RLS.
 function service(){
   const rows=[],tokens=new Map();let seq=0,refreshes=0;

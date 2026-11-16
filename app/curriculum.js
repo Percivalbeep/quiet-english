@@ -1,4 +1,6 @@
-// Four weeks of short, silent practice. Spoken production is tracked separately.
+import {lessonContent} from './lesson-content.js';
+import {audioManifest} from './audio-manifest.js';
+// Vocabulary, retrieval, conversation and reading form one daily learning unit.
 const units = [
   ['认识彼此','Hello, a little at a time.','先从自己的名字开始。','打招呼并介绍自己','Hi, I’m Anna.','你好，我是安娜。','Nice to meet you.','很高兴认识你。','What’s your name?','你叫什么名字？','在晚间说出自己的名字，并问对方的名字。'],
   ['没听清，也有办法','Could you say that again?','听不懂时，也能让交流继续。','请求重复与放慢语速','Could you say that again?','你能再说一遍吗？','Could you speak more slowly?','你能说慢一点吗？','Could you write it down?','你能写下来吗？','让对方说一句话，再主动请求重复。'],
@@ -34,7 +36,8 @@ export const weeks = [
 export const lessons = units.map((u,index)=>{
   const [title,headline,description,goal,a,az,b,bz,c,cz,speaking]=u;
   const id=`day-${String(index+1).padStart(2,'0')}`;
-  const phrases=[{en:a,zh:az},{en:b,zh:bz},{en:c,zh:cz}];
+  const content=lessonContent[index];
+  const phrases=[{en:a,zh:az},{en:b,zh:bz},{en:c,zh:cz},...content.extra.map(([en,zh])=>({en,zh}))];
   const others=[units[(index+7)%units.length][5],units[(index+13)%units.length][5]];
   const options=[az,...others];
   // Rotate options so the correct answer is not always in the same position.
@@ -46,9 +49,33 @@ export const lessons = units.map((u,index)=>{
     {id:`${id}-write`,type:'input',skill:'写',prompt:`表达「${az}」，试着补上缺少的词。`,template:a.replace(/\b([A-Za-z]+)([.!?]?)$/, '____$2'),answer:a.match(/\b([A-Za-z]+)[.!?]?$/)[1],explanation:`完整表达是：${a}`},
     {id:`${id}-listen2`,type:'listen',skill:'听',prompt:'再听一句，不看英文，找出正确意思。',audioText:c,options:rotated([cz,units[(index+5)%units.length][9],units[(index+16)%units.length][9]],index),answer:cz,explanation:`你听到的是：${c}`}
   ];
-  return {id,day:index+1,week:Math.floor(index/6)+1,title,headline,description,goal,phrases,questions,speaking,minutes:15};
+  const vocabularyQuestions=content.vocabulary.flatMap((word,i)=>[
+    {id:`${id}-vocab-meaning-${i}`,type:'choice',skill:'词汇',section:'词义辨认',wordId:word.id,prompt:`词语「${word.en}」在本课中表示什么？`,options:rotated([word.zh,content.vocabulary[(i+2)%8].zh,content.vocabulary[(i+5)%8].zh],i+index),answer:word.zh,explanation:`${word.en}：${word.zh}。例句：${word.example}`},
+    ...(i%2===(index%2)?[{id:`${id}-vocab-write-${i}`,type:'input',skill:'词汇',section:'拼写回忆',wordId:word.id,prompt:`回忆词汇：写出「${word.zh}」的英文。`,template:'先回忆，再输入；不用追求一次记住。',answer:word.en,explanation:`${word.en}：${word.zh}。${word.example}`}]:[{id:`${id}-vocab-listen-${i}`,type:'listen',skill:'词汇',section:'听音辨词',wordId:word.id,prompt:'听一个词语，选择它在本课中的意思。',audioText:word.en,options:rotated([word.zh,content.vocabulary[(i+1)%8].zh,content.vocabulary[(i+4)%8].zh],i),answer:word.zh,explanation:`你听到的是 ${word.en}，意思是「${word.zh}」。`}])
+  ]);
+  const extraQuestions=content.extra.flatMap(([en,zh],i)=>{
+    const answer=en.match(/\b([A-Za-z]+)[.!?]?$/)[1];
+    return [{id:`${id}-extra-gap-${i}`,type:'input',skill:'写',section:'表达填空',prompt:`表达「${zh}」，补上缺少的词。`,template:en.replace(/\b([A-Za-z]+)([.!?]?)$/,'____$2'),answer,explanation:`完整表达：${en}`},
+      {id:`${id}-order-${i}`,type:'order',skill:'表达准备',section:'组句练习',prompt:`把词语排成一句话，表达「${zh}」。`,tokens:rotated(en.split(' ').slice().reverse(),i+1),answer:en,explanation:`可以这样说：${en}`}];
+  });
+  const dialogueText=content.dialogue.map(d=>d[1]).join('\n');
+  const dialogueQuestions=[1,5].map((turn,i)=>({id:`${id}-dialogue-${i}`,type:'listen',skill:'听',section:'情境对话',prompt:i?'听完整段对话，最后一句表达什么意思？':'听完整段对话，第二位说话者第一次回应表达什么意思？',audioText:dialogueText,options:rotated([content.dialogue[turn][2],content.dialogue[(turn+2)%6][2],content.dialogue[(turn+4)%6][2]],index+i),answer:content.dialogue[turn][2],explanation:`对应原句是：${content.dialogue[turn][1]}` }));
+  const readingQuestions=content.facts.map(([prompt,answer,distractors],i)=>({id:`${id}-reading-${i}`,type:'reading',skill:'读',section:'短文任务',prompt,passage:content.reading,translation:content.translation,options:rotated([answer,...distractors],index+i),answer,explanation:`根据短文，应选「${answer}」。${content.translation}`}));
+  return {id,version:2,day:index+1,week:Math.floor(index/6)+1,title,headline,description,goal,phrases,vocabulary:content.vocabulary,dialogue:content.dialogue,dialogueText,reading:content.reading,translation:content.translation,tip:content.tip,questions:[...vocabularyQuestions,...questions.map(q=>({...q,section:'基础表达'})),...extraQuestions,...dialogueQuestions,...readingQuestions],speaking,minutes:25};
 });
 export function audioPath(text) {
-  for(const lesson of lessons){const i=lesson.phrases.findIndex(p=>p.en===text);if(i>=0)return `assets/audio/${lesson.id}-${i+1}.m4a`;}
-  return null;
+  return audioManifest[text]?.path||null;
+}
+export function reviewQuestions(lesson,{round=0,weakQuestionIds=[]}={}){
+  const selected=[],seenWords=new Set();
+  const add=q=>{if(q?.wordId&&!seenWords.has(q.wordId)){selected.push(q);seenWords.add(q.wordId);}};
+  for(const id of weakQuestionIds){add(lesson.questions.find(q=>q.id===id));if(selected.length>=2)break;}
+  for(let i=0;selected.length<4&&i<8;i++){
+    const word=lesson.vocabulary[(round*4+i)%8];const candidates=lesson.questions.filter(q=>q.wordId===word.id);
+    add(candidates[(i+Math.floor(round/2))%candidates.length]);
+  }
+  const expressions=lesson.questions.filter(q=>q.section==='基础表达');
+  const dialogues=lesson.questions.filter(q=>q.section==='情境对话');
+  const reading=lesson.questions.filter(q=>q.section==='短文任务');
+  return [...selected,expressions[round%expressions.length],expressions[(round+2)%expressions.length],dialogues[round%dialogues.length],reading[round%reading.length]];
 }

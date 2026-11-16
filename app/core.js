@@ -19,18 +19,21 @@ export function lessonStats(lesson, events, userId) {
   const relevant = events.filter(e => e.actor_id === userId && e.lesson_id === lesson.id);
   const answers = relevant.filter(e=>e.kind==='answer');
   const latest = new Map(), first = new Map();
+  const retrievalLatest=new Map();
+  for(const e of relevant.filter(e=>['answer','review_answer'].includes(e.kind)))retrievalLatest.set(e.payload.questionId,e);
   for (const e of answers) { latest.set(e.payload.questionId,e); if (!first.has(e.payload.questionId)) first.set(e.payload.questionId,e); }
   const ids = lesson.questions.map(q=>q.id);
   const answered = ids.filter(id=>latest.has(id)).length;
   const correct = ids.filter(id=>latest.get(id)?.payload.correct).length;
   const firstCorrect = ids.filter(id=>first.get(id)?.payload.correct).length;
-  return {answered,correct,firstCorrect,total:ids.length,complete:answered===ids.length,
-    speaking:relevant.some(e=>e.kind==='speaking'), reviews:relevant.filter(e=>e.kind==='review'), latest, first};
+  return {answered,correct,firstCorrect,total:ids.length,complete:answered===ids.length,legacyComplete:relevant.some(e=>e.kind==='complete'&&(e.payload.curriculumVersion||1)<(lesson.version||1)),
+    speaking:relevant.some(e=>e.kind==='speaking'), reviews:relevant.filter(e=>e.kind==='review'), latest, first,retrievalLatest};
 }
 export function reviewState(lesson, events, userId, now = Date.now()) {
   const stats = lessonStats(lesson, events, userId);
   if (!stats.complete) return null;
-  const completion = events.find(e=>e.actor_id===userId && e.lesson_id===lesson.id && e.kind==='complete');
+  const completions=events.filter(e=>e.actor_id===userId && e.lesson_id===lesson.id && e.kind==='complete');
+  const completion=completions.filter(e=>(e.payload.curriculumVersion||1)>=(lesson.version||1)).at(-1)||completions.at(-1);
   if (!completion) return null;
   let anchor = Date.parse(completion.created_at), level = 0;
   for (const review of stats.reviews) {
