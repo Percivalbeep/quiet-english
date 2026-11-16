@@ -1,3 +1,4 @@
+import {systemAudio} from './system-audio.js';
 import {stageQuestions,interleave} from './practice.js';
 import {readingMarkup,savedWords,dictationQuestions,savedReviewQuestions} from './vocabulary.js';
 import {reviewQuestions} from './curriculum.js';
@@ -25,12 +26,26 @@ export class LearningDialog{
     this.run={...r,parent:{...r},questions:dictationQuestions(r.lesson,words),review:true,practice:true,index:0,phase:'quiz',chosen:'',order:[],submitted:false,results:[]};this.onOpen(this.run);this.render();this.dialog.scrollTop=0;
   }
   stopAudio(){
+    clearTimeout(this.audioTimer);
+    if(this.audio){this.audio.onended=null;this.audio.onerror=null;this.audio.onplaying=null;this.audio.pause();this.audio.remove?.();this.audio=null;}
     if(this.utterance){this.utterance.onend=null;this.utterance.onerror=null;globalThis.speechSynthesis?.cancel();}
     if(this.playingButton?.isConnected)this.playingButton.textContent=this.playingLabel;
     this.utterance=null;this.playingButton=null;
   }
   async play(text,button){
     this.stopAudio();
+    const path=systemAudio[text]?.path;
+    if(!path)return this.playSpeech(text,button);
+    this.playingButton=button;this.playingLabel=button.textContent;button.textContent='正在加载音频…';
+    const audio=new Audio(path);audio.hidden=true;globalThis.document?.body?.appendChild(audio);this.audio=audio;audio.preload='auto';audio.playbackRate=this.dialog.querySelector('#slow-audio')?.checked?.8:1;
+    const failed=()=>{if(this.audio!==audio)return;this.stopAudio();this.toast('音频加载或播放失败，请确认网络后再点一次。');};
+    let started=false;audio.onplaying=()=>{started=true;clearTimeout(this.audioTimer);if(this.audio===audio)button.textContent='正在播放…';};
+    audio.onended=()=>{if(this.audio===audio)this.stopAudio();};audio.onerror=failed;
+    this.audioTimer=setTimeout(()=>{if(this.audio===audio&&!started)failed();},12000);
+    try{await audio.play();if(this.audio===audio){started=true;clearTimeout(this.audioTimer);button.textContent='正在播放…';}}catch{failed();}
+  }
+  async playSpeech(text,button){
+
     if(!globalThis.speechSynthesis||!globalThis.SpeechSynthesisUtterance)return this.toast('当前浏览器不支持设备语音，请使用 Safari、Chrome 或 Edge。');
     this.playingButton=button;this.playingLabel=button.textContent;button.textContent='正在播放…';
     const utterance=new SpeechSynthesisUtterance(text);utterance.lang='en-US';
@@ -39,6 +54,8 @@ export class LearningDialog{
     utterance.rate=this.dialog.querySelector('#slow-audio')?.checked?.7:.85;
     this.utterance=utterance;
     utterance.onend=()=>{if(this.utterance===utterance)this.stopAudio();};
+    this.audioTimer=setTimeout(()=>{if(this.utterance===utterance){this.stopAudio();this.toast('设备语音没有响应，请重新点击播放；自选生词需要设备启用英语语音。');}},Math.max(15000,text.length*150));
+    utterance.onstart=()=>clearTimeout(this.audioTimer);
     utterance.onerror=e=>{if(this.utterance!==utterance)return;this.stopAudio();if(!['canceled','interrupted'].includes(e.error))this.toast('设备语音无法播放，请在系统设置中启用英语语音后重试。');};
     try{speechSynthesis.speak(utterance);}catch{this.stopAudio();this.toast('设备语音暂时无法播放，请重试。');}
   }
@@ -73,7 +90,7 @@ export class LearningDialog{
     if(r.tab===0)body=`<h2 id="lesson-heading">先把词语学扎实。</h2><p class="muted">今天8个关键词。听发音、认意思、看例句；熟词也会在新场景里复用。接下来会分别练词义、听辨和拼写。</p><div class="vocab-study-grid">${l.vocabulary.map((w,i)=>`<article class="vocab-study-card"><div><small>0${i+1}</small>${this.audioButton(w.en)}</div><strong lang="en">${esc(w.en)}</strong><p>${esc(w.zh)}</p><blockquote lang="en">${esc(w.example)}</blockquote></article>`).join('')}</div>`;
     if(r.tab===1)body=`<h2 id="lesson-heading">把词，放进生活里。</h2><p class="muted">今天5个表达。留意关键词在句子里的位置，先理解再尝试回忆。</p><div class="phrase-list">${l.phrases.map((p,i)=>`<article><span class="phrase-number">0${i+1}</span><div><strong lang="en">${esc(p.en)}</strong><p>${esc(p.zh)}</p></div>${this.audioButton(p.en,'▶ 听一句')}</article>`).join('')}</div><section class="phrase-list"><h3>本课生词，在句子中再见一次</h3>${l.vocabulary.map(w=>`<article><div><strong>${esc(w.en)} · ${esc(w.zh)}</strong><p lang="en">${esc(w.example)}</p></div>${this.audioButton(w.example,'▶ 听例句')}</article>`).join('')}</section><div class="lesson-tip"><strong>一点点语言规律</strong><br>${esc(l.tip)}</div>`;
     if(r.tab===-1)body=`<h2 id="lesson-heading">听出一句话的来回。</h2><p class="muted">先听完整段，抓住正在做什么；再分句看。听不懂时可以重听，不需要在工位开口。</p><div class="dialogue-play">${this.audioButton(l.dialogueText,'▶ 听整段情境对话')}<label class="slow-toggle"><input id="slow-audio" type="checkbox"> 慢一点听</label></div><div class="dialogue-transcript">${l.dialogue.map(([speaker,en,zh])=>`<article class="speaker-${speaker.toLowerCase()}"><span>${speaker}</span><div><p lang="en">${esc(en)}</p><details><summary>看中文意思</summary><small>${esc(zh)}</small></details></div></article>`).join('')}</div>`;
-    if(r.tab===2)body=`<h2 id="lesson-heading">读懂一小段生活信息。</h2><p class="muted">带着三个问题阅读：谁、要做什么、有哪些关键信息？不认识的词可返回单词页查看。</p><details class="translation-help"><summary>先听情境对话，看看这些表达怎样使用</summary>${this.audioButton(l.dialogueText,'▶ 听情境对话')}${l.dialogue.map(([speaker,en,zh])=>`<p lang="en">${speaker}: ${esc(en)}</p><small>${esc(zh)}</small>`).join('')}</details><div class="reading-passage" lang="en">${readingMarkup(l.reading)}</div><details class="translation-help"><summary>需要帮助时，看中文参考</summary><p>${esc(l.translation)}</p></details><div class="lesson-tip">接下来通过课文理解和听力问题检查掌握情况。可以随时暂停，提交过的答案会保存。</div>`;
+    if(r.tab===2)body=`<h2 id="lesson-heading">读懂一小段生活信息。</h2><p class="muted">带着三个问题阅读：谁、要做什么、有哪些关键信息？不认识的词可返回单词页查看。</p><details class="translation-help"><summary>先听情境对话，看看这些表达怎样使用</summary><p class="small-note">A、B使用不同音色，换人时有停顿。</p>${this.audioButton(l.dialogueText,'▶ 听情境对话')}${l.dialogue.map(([speaker,en,zh])=>`<p lang="en">${speaker} · ${speaker==='A'?'女声':'男声'}：${esc(en)}</p><small>${esc(zh)}</small>`).join('')}</details><div class="reading-passage" lang="en">${readingMarkup(l.reading)}</div><details class="translation-help"><summary>需要帮助时，看中文参考</summary><p>${esc(l.translation)}</p></details><div class="lesson-tip">接下来通过课文理解和听力问题检查掌握情况。可以随时暂停，提交过的答案会保存。</div>`;
     const personal=savedWords(this.getEvents?.()||[],this.getUserId?.(),l.id);
     const wordTools=`<section class="lesson-tip"><strong>单词听写与本课生词</strong><p>听英语、输入拼写，提交后再看答案。包含本课8个词和自己收藏的生词。</p><button class="secondary" data-dictation>开始本课单词听写（${dictationQuestions(l,[...l.vocabulary,...personal]).length}词）</button>${r.tab===2?`<p>点击短文中的英文词，或手动输入词组；可补充中文意思。</p><form id="save-reading-word"><label>英文词语或词组<input id="new-word" maxlength="80" required autocomplete="off"></label><label>中文意思（选填）<input id="new-meaning" maxlength="100"></label><button class="secondary" type="submit">加入本课生词</button></form>`:''}<div class="personal-words">${personal.map(w=>`<div><strong>${esc(w.en)}</strong> ${esc(w.zh||'待补充释义')} ${this.audioButton(w.en)}<button class="text-button" data-remove-word="${esc(w.en)}">移除</button></div>`).join('')||'<p>还没有收藏生词。可到「读懂生活信息」中添加。</p>'}</div></section>`;
     return `<div class="study-tabs" role="tablist">${tabs.map((t,i)=>`<button role="tab" aria-selected="${i===r.tab}" data-study-tab="${i}">${t}</button>`).join('')}</div>${body}${r.tab===0||r.tab===2?wordTools:''}<div class="study-actions">${r.tab>0?'<button class="secondary wide" data-back>← 返回上一部分</button>':''}${r.tab<2?`<button class="primary wide" id="next-study">下一段：${tabs[r.tab+1]} →</button><button class="text-button wide" data-start-quiz>练一练这一部分</button>`:`<button class="primary wide" data-start-quiz>开始课文理解与听力检测 →</button>`}</div><p class="small-note">建议20—30分钟，包含复听、回忆和复习；可拆成4次短练。${this.getRole()==='teacher'?'陪练预览不会写入学习者成绩。':''}</p>`;

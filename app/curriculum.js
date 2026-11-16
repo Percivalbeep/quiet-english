@@ -1,5 +1,5 @@
 import {lessonContent} from './lesson-content.js';
-import {audioManifest} from './audio-manifest.js';
+import {systemAudio} from './system-audio.js';
 // Vocabulary, retrieval, conversation and reading form one daily learning unit.
 const units = [
   ['认识彼此','Hello, a little at a time.','先从自己的名字开始。','打招呼并介绍自己','Hi, I’m Anna.','你好，我是安娜。','Nice to meet you.','很高兴认识你。','What’s your name?','你叫什么名字？','在晚间说出自己的名字，并问对方的名字。'],
@@ -69,7 +69,7 @@ export const lessons = units.map((u,index)=>{
   return {id,version:3,day:index+1,week:Math.floor(index/6)+1,title,headline,description,goal,phrases,vocabulary:content.vocabulary,dialogue:content.dialogue,dialogueText,reading:content.reading,translation:content.translation,tip:content.tip,questions:[...vocabularyQuestions,...questions.map(q=>({...q,section:'基础表达'})),...extraQuestions,...dialogueQuestions,...readingQuestions],speaking,minutes:25};
 });
 export function audioPath(text) {
-  return audioManifest[text]?.path||null;
+  return systemAudio[text]?.path||null;
 }
 export function reviewQuestions(lesson,{round=0,weakQuestionIds=[]}={}){
   const selected=[],seenWords=new Set();

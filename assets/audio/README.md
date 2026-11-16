@@ -1,17 +1,18 @@
-# Course speech
+# Current course speech
 
-The current course uses the Qwen3-TTS-12Hz-1.7B-CustomVoice model, Aiden speaker,
-run offline through the existing MLX 4-bit environment on the author's Mac.
-No voice cloning, cloud TTS key or paid inference endpoint is used.
+The course player uses static MP3 files generated with installed macOS English voices.
+Vocabulary, example sentences and expressions use Samantha. Full conversations use
+Samantha for speaker A and Daniel for speaker B, with 0.55 seconds of padding after
+each turn. These recordings do not require the learner device to have browser TTS voices.
 
-`qwen-provenance.json` maps each text to the generated MP3 and records voice,
-model, duration and pitch-preserving beginner pacing. The browser also offers
-an additional slower playback option. Old day-numbered m4a files are retained
-for source history but are not selected by the updated course.
+`app/system-audio.js` maps all 399 course utterances to their recordings and records
+conversation speaker assignments. All files are decoded before publication.
+Personal words absent from the course library still use browser speech, with an
+explicit timeout or failure message if that device cannot start speech.
 
-The model source and its Apache-2.0 license:
-https://github.com/QwenLM/Qwen3-TTS
+Regeneration: run `node scripts/system-audio-jobs.mjs`, then
+`python3 scripts/make-system-audio.py` and `python3 scripts/make-conversation-audio.py`
+on a Mac with Samantha, Daniel, and ffmpeg installed. Intermediate jobs are ignored.
 
-Regenerate with `scripts/make-qwen-audio.py` in the existing Qwen environment,
-then run `scripts/pace-audio.py`. Model weights and intermediate recordings
-stay outside the public website.
+Older Qwen and day-numbered m4a assets are retained for history. They are not used
+by the current player. Qwen sources: https://github.com/QwenLM/Qwen3-TTS
