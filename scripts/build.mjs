@@ -2,6 +2,7 @@ import {cp,mkdir,rm,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {runInNewContext} from 'node:vm';
+import {createHash} from 'node:crypto';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 await rm(path.join(root,'dist'),{recursive:true,force:true});
 await mkdir(path.join(root,'dist'),{recursive:true});
@@ -30,5 +31,20 @@ if(configuredKey){
     if(payload?.role!=='anon')throw new Error('Unexpected privileged or invalid key in public configuration.');
   }
 }
+// Give changed modules explicit versions so a browser cannot keep using an
+// older cached sign-in implementation after a deployment.
+const version=async relative=>createHash('sha256').update(await readFile(path.join(root,'dist',relative))).digest('hex').slice(0,12);
+const mainPath=path.join(root,'dist/app/main.js');
+let main=await readFile(mainPath,'utf8');
+for(const name of ['core.js','cloud.js','curriculum.js']){
+  main=main.replaceAll(`'./${name}'`,`'./${name}?v=${await version('app/'+name)}'`);
+}
+await writeFile(mainPath,main);
+const htmlPath=path.join(root,'dist/index.html');
+let html=await readFile(htmlPath,'utf8');
+for(const relative of ['config.js','app/boot.js','app/main.js','app/style.css']){
+  html=html.replaceAll(`"${relative}"`,`"${relative}?v=${await version(relative)}"`);
+}
+await writeFile(htmlPath,html);
 await writeFile(path.join(root,'dist/.nojekyll'),'');
 console.log('Static site ready in dist/; no private learning records or server secrets included.');
