@@ -50,12 +50,12 @@ export class CloudClient {
   }
   async membership(){const rows=await this.rest('qe_members?select=*&order=created_at.asc');this.membersSnapshot=rows;const userId=this.session?.user.id;const own=rows.find(m=>m.user_id===userId);if(!own){const error=new Error('账号已登录，但还没有加入学习空间。请使用陪练提供的邀请链接。');error.code='NO_MEMBERSHIP';throw error;}return {own,members:rows};}
   async pushEvents(events){if(events.length)await this.rest('qe_events?on_conflict=id',{method:'POST',body:events.map(({seq,...e})=>e),headers:{Prefer:'resolution=ignore-duplicates,return=minimal'}});}
-  async pullEvents(){
+  async pullEvents({full=false}={}){
     // Periodic full reconciliation also catches transactions that committed
     // out of sequence while another device was polling.
     const cycle=this.pullCount++;
     if(cycle%6===0)await this.membership();
-    const result=[];let cursor=cycle%12===0?0:this.cursor;
+    const result=[];let cursor=full||cycle%12===0?0:this.cursor;
     while(true){const page=await this.rest(`qe_events?select=*&seq=gt.${cursor}&order=seq.asc&limit=500`);result.push(...page);if(page.length)cursor=page.at(-1).seq;if(page.length<500)break;}
     this.pendingCursor=Math.max(cursor,this.cursor);return result;
   }

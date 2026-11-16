@@ -26,17 +26,20 @@ export function lessonStats(lesson, events, userId) {
   const answered = ids.filter(id=>latest.has(id)).length;
   const correct = ids.filter(id=>latest.get(id)?.payload.correct).length;
   const firstCorrect = ids.filter(id=>first.get(id)?.payload.correct).length;
-  return {answered,correct,firstCorrect,total:ids.length,complete:answered===ids.length,legacyComplete:relevant.some(e=>e.kind==='complete'&&(e.payload.curriculumVersion||1)<(lesson.version||1)),
+  const completions=relevant.filter(e=>e.kind==='complete');
+  const historicalAnswered=first.size,historicalFirstCorrect=[...first.values()].filter(e=>e.payload.correct).length;
+  return {answered,correct,firstCorrect,historicalAnswered,historicalFirstCorrect,additionalQuestions:ids.length-answered,currentContentComplete:answered===ids.length,total:ids.length,complete:completions.length>0||answered===ids.length,legacyComplete:relevant.some(e=>e.kind==='complete'&&(e.payload.curriculumVersion||1)<(lesson.version||1)),
     speaking:relevant.some(e=>e.kind==='speaking'), reviews:relevant.filter(e=>e.kind==='review'), latest, first,retrievalLatest};
 }
 export function reviewState(lesson, events, userId, now = Date.now()) {
   const stats = lessonStats(lesson, events, userId);
   if (!stats.complete) return null;
   const completions=events.filter(e=>e.actor_id===userId && e.lesson_id===lesson.id && e.kind==='complete');
-  const completion=completions.filter(e=>(e.payload.curriculumVersion||1)>=(lesson.version||1)).at(-1)||completions.at(-1);
+  // Curriculum edits cannot revoke completion or restart an existing review schedule.
+  const completion=completions[0];
   if (!completion) return null;
   let anchor = Date.parse(completion.created_at), level = 0;
-  for (const review of stats.reviews) {
+  for (const review of stats.reviews.filter(e=>Date.parse(e.created_at)>=anchor)) {
     anchor = Date.parse(review.created_at);
     level = review.payload.passed ? Math.min(level+1, INTERVALS.length-1) : 0;
   }
@@ -84,10 +87,10 @@ export class SyncEngine {
   sync(force=false) {
     if (this.running) return this.running;
     if (!force && (!this.isVisible() || Date.now()<this.nextRetry)) return Promise.resolve();
-    this.running=this.perform().finally(()=>{this.running=null;});
+    this.running=this.perform(force).finally(()=>{this.running=null;});
     return this.running;
   }
-  async perform() {
+  async perform(full=false) {
     try {
       this.onState({status:'syncing'});
       const before=this.store.read();
@@ -97,7 +100,7 @@ export class SyncEngine {
         await this.cloud.pushEvents(batch);
         this.store.reconcile([],batch.map(e=>e.id));
       }
-      const remote=await this.cloud.pullEvents();
+      const remote=await this.cloud.pullEvents({full});
       const state=this.store.reconcile(remote);
       this.cloud.commitCursor?.();
       this.failures=0; this.nextRetry=0;

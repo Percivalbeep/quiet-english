@@ -31,11 +31,11 @@ test('review is due after an interval; a missed review shortens subsequent spaci
   events.push(event('review',{passed:false},l.id,undefined,new Date(base+4*DAY)));
   assert.equal(reviewState(l,events,'learner').due,base+5*DAY);
 });
-test('expanding an old five-question lesson keeps its answers and anchors the new review to the new completion',()=>{
+test('curriculum expansion preserves completed lessons and their original review schedule',()=>{
   const l=lessons[0],original=l.questions.filter(q=>q.section==='基础表达');const old=original.map(q=>event('answer',{questionId:q.id,correct:true}));old.push(event('complete'));
-  assert.equal(lessonStats(l,old,'learner').answered,5);assert.equal(lessonStats(l,old,'learner').legacyComplete,true);assert.equal(lessonStats(l,old,'learner').complete,false);
+  assert.equal(lessonStats(l,old,'learner').answered,5);assert.equal(lessonStats(l,old,'learner').legacyComplete,true);assert.equal(lessonStats(l,old,'learner').complete,true);assert.equal(lessonStats(l,old,'learner').currentContentComplete,false);
   const upgraded=[...old,...l.questions.filter(q=>!original.includes(q)).map(q=>event('answer',{questionId:q.id,correct:true}))];const now=new Date('2026-11-20T01:00:00Z');upgraded.push(event('complete',{curriculumVersion:2},l.id,undefined,now));
-  assert.equal(reviewState(l,upgraded,'learner',now.getTime()).due,now.getTime()+DAY);
+  assert.equal(reviewState(l,upgraded,'learner',now.getTime()).due,Date.parse(old.at(-1).created_at)+DAY);
 });
 test('short reviews rotate across every vocabulary item and prioritize a previous mistake',()=>{
   const l=lessons[0],covered=new Set();for(let round=0;round<4;round++)for(const q of reviewQuestions(l,{round}))if(q.wordId)covered.add(q.wordId);
@@ -65,4 +65,17 @@ test('two independent device stores converge without overwriting each other',asy
 });
 test('SQL declares family RLS, immutable event grants and role-limited writes',async()=>{
   const sql=await readFile(new URL('../supabase/schema.sql',import.meta.url),'utf8');assert.match(sql,/qe_events enable row level security/);assert.match(sql,/actor_id=\(select auth.uid\(\)\)/);assert.match(sql,/grant select, insert on public.qe_events/);assert.doesNotMatch(sql,/grant[^;]*(update|delete)[^;]*to authenticated/i);
+});
+
+test('three completed lessons remain completed on another device after question IDs and version change',async()=>{
+ const remote=new Map(),cloud={pushEvents:async rows=>rows.forEach(e=>remote.set(e.id,e)),pullEvents:async()=>[...remote.values()]};const a=new LocalStore(storage(),'a'),b=new LocalStore(storage(),'b');
+ for(const lesson of lessons.slice(0,3)){for(let i=0;i<5;i++)a.append(event('answer',{questionId:lesson.id+'-old-'+i,correct:true},lesson.id));a.append(event('complete',{curriculumVersion:1},lesson.id));}
+ await new SyncEngine({store:a,cloud}).sync(true);await new SyncEngine({store:b,cloud}).sync(true);
+ assert.deepEqual(a.read().events,b.read().events);
+ for(const lesson of lessons.slice(0,3)){const upgraded={...lesson,version:99,questions:lesson.questions.map(q=>({...q,id:q.id+'-new'}))};const stats=lessonStats(upgraded,b.read().events,'learner');assert.equal(stats.complete,true);assert.equal(stats.historicalAnswered,5);assert.equal(stats.historicalFirstCorrect,5);assert.equal(stats.answered,0);assert.ok(reviewState(upgraded,b.read().events,'learner'));}
+ assert.equal(lessonStats(lessons[3],b.read().events,'learner').complete,false);
+});
+
+test('manual and startup synchronization request a full reconciliation, including late commits',async()=>{
+ const flags=[];const engine=new SyncEngine({store:new LocalStore(storage(),'full'),cloud:{pushEvents:async()=>{},pullEvents:async options=>{flags.push(options.full);return []}}});await engine.sync(true);await engine.sync();assert.deepEqual(flags,[true,false]);
 });
