@@ -18,3 +18,11 @@ test('fragment invitations survive login and are removed only after a successful
     assert.equal(pendingInvite(),'');assert.equal(replaced,'/quiet-english/#today');
   }finally{Object.assign(globalThis,previous)}
 });
+
+test('an enrolled account discards an old invitation instead of blocking startup',async()=>{
+ const previous={location:globalThis.location,localStorage:globalThis.localStorage,history:globalThis.history};let cleared=false,joined=false;
+ globalThis.location={hash:'',search:'',href:'https://example.test/#today'};
+ globalThis.localStorage={getItem:()=>cleared?null:'1234567890abcdef1234567890abcdef',removeItem:()=>{cleared=true}};
+ globalThis.history={replaceState(){}};
+ try{await joinPendingInvite({membership:async()=>({own:{}}),joinInvite:async()=>{joined=true}});assert.equal(cleared,true);assert.equal(joined,false);}finally{Object.assign(globalThis,previous)}
+});

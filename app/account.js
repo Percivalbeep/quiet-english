@@ -1,6 +1,6 @@
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function pendingInvite(){const fragment=new URLSearchParams((location.hash||'').split('?')[1]||'');const inUrl=fragment.get('invite')||new URLSearchParams(location.search).get('invite');if(inUrl&&/^[a-f0-9]{32}$/.test(inUrl))localStorage.setItem('quiet-english-pending-invite',inUrl);return inUrl||localStorage.getItem('quiet-english-pending-invite')||'';}
-export async function joinPendingInvite(cloud,name=''){const code=pendingInvite();if(!code)return false;await cloud.joinInvite(code,name);localStorage.removeItem('quiet-english-pending-invite');const url=new URL(location.href);url.searchParams.delete('invite');history.replaceState(null,'',url.pathname+url.search+'#today');return true;}
+export async function joinPendingInvite(cloud,name=''){const code=pendingInvite();if(!code)return false;if(cloud.membership){try{await cloud.membership();}catch(error){if(error.code!=='NO_MEMBERSHIP')throw error;await cloud.joinInvite(code,name);}}else await cloud.joinInvite(code,name);localStorage.removeItem('quiet-english-pending-invite');const url=new URL(location.href);url.searchParams.delete('invite');history.replaceState(null,'',url.pathname+url.search+'#today');return true;}
 export class AccountDialog{
   constructor(options){Object.assign(this,options);this.view='login';}
   open(view='login'){
