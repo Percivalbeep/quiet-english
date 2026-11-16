@@ -1,7 +1,7 @@
 export class CloudClient {
   constructor(config, storage=localStorage, fetcher=fetch) {
     this.url=config.supabaseUrl.replace(/\/$/,''); this.key=config.supabasePublishableKey;
-    this.storage=storage; this.fetcher=fetcher; this.sessionKey=`quiet-english-session:${this.url}`;
+    this.storage=storage; this.fetcher=(...args)=>fetcher.call(globalThis,...args); this.sessionKey=`quiet-english-session:${this.url}`;
     this.refreshing=null; this.cursor=0; this.pullCount=0;
   }
   get configured(){return Boolean(this.url&&this.key);}

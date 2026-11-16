@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {CloudClient} from '../app/cloud.js';
 import {LocalStore,SyncEngine,createEvent} from '../app/core.js';
 const memory=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};
+test('browser-native fetch receives the global receiver, not the CloudClient instance',async()=>{
+  let called=false;
+  function browserFetch(){assert.equal(this,globalThis);called=true;return Promise.resolve(new Response('{}',{headers:{'content-type':'application/json'}}));}
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},memory(),browserFetch);
+  await cloud.request('/auth/v1/health');assert.equal(called,true);
+});
 // An API-contract fixture, not a substitute for checking deployed Supabase RLS.
 function service(){
   const rows=[],tokens=new Map();let seq=0,refreshes=0;
