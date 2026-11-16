@@ -6,9 +6,10 @@ export class AccountDialog{
   open(view='login'){
     this.view=view;const {dialog,cloud}=this;
     const signedIn=this.getMode()==='cloud';
-    dialog.innerHTML=`<div class="dialog-top"><span class="eyebrow">YOUR LEARNING SPACE</span><button class="icon-button" data-close aria-label="关闭">✕</button></div><h2 id="account-heading">${signedIn?'已连接学习空间':view==='signup'?'从自己的账号开始。':view==='join'?'加入陪练的学习空间':'把小小进步，同步起来'}</h2>${signedIn?`<p class="muted">${esc(this.getName())} · ${this.getRole()==='teacher'?'陪练老师':'学习者'}</p><button class="primary" id="account-logout">退出账号</button>`:!cloud.configured?'<p class="muted">云端连接尚未配置，当前可以本机试用。</p>':this.formView(view)}`;
+    dialog.innerHTML=`<div class="dialog-top"><span class="eyebrow">YOUR LEARNING SPACE</span><button class="icon-button" data-close aria-label="关闭">✕</button></div><h2 id="account-heading">${signedIn?'已连接学习空间':view==='signup'?'从自己的账号开始。':view==='join'?'加入陪练的学习空间':'把小小进步，同步起来'}</h2>${signedIn?`<p class="muted">${esc(this.getName())} · ${this.getRole()==='teacher'?'陪练老师':'学习者'}</p><button class="primary" id="manage-profile">管理昵称与头像</button><button class="text-button" id="account-logout">退出账号</button>`:!cloud.configured?'<p class="muted">云端连接尚未配置，当前可以本机试用。</p>':this.formView(view)}`;
     dialog.querySelector('[data-close]').onclick=()=>dialog.close();
     dialog.querySelectorAll('[data-auth-view]').forEach(b=>b.onclick=()=>this.open(b.dataset.authView));
+    dialog.querySelector('#manage-profile')?.addEventListener('click',()=>{dialog.close();location.hash='settings';});
     dialog.querySelector('#account-logout')?.addEventListener('click',()=>{dialog.close();this.onLogout();});
     dialog.querySelector('#auth-form')?.addEventListener('submit',e=>this.submit(e));
     if(!dialog.open)dialog.showModal();

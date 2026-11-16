@@ -25,6 +25,13 @@ export class CloudClient {
     this.saveSession({access_token:token,refresh_token:refresh,expires_in:Number(params.get('expires_in'))||3600,user});
     return true;
   }
+  async refreshProfile(){const rows=await this.rest('qe_profiles?select=display_name,avatar_data&user_id=eq.'+encodeURIComponent(this.session.user.id));this.profile=rows[0]||null;return this.profile;}
+  async updateProfile(displayName,avatar){
+    const name=String(displayName).trim();if(!name||name.length>60)throw new Error('昵称需要1—60个字符。');
+    if(avatar&&(!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(avatar)||avatar.length>90000))throw new Error('头像格式或大小不合适，请重新选择。');
+    await this.rest('qe_profiles?on_conflict=user_id',{method:'POST',body:{user_id:this.session.user.id,display_name:name,avatar_data:avatar||''},headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});
+    this.profile={display_name:name,avatar_data:avatar||''};return this.profile;
+  }
   async createInvite(){return this.rest('rpc/qe_create_invite',{method:'POST',body:{}});}
   async joinInvite(code,displayName=''){return this.rest('rpc/qe_join_invite',{method:'POST',body:{invite_code:code,learner_name:displayName}});}
   async token(){

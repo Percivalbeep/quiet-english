@@ -1,4 +1,4 @@
-import {audioPath,reviewQuestions} from './curriculum.js';
+import {reviewQuestions} from './curriculum.js';
 import {isCorrect} from './core.js';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tabs=['单词先打底','把词放进句子','听一段对话','读懂生活信息'];
@@ -13,13 +13,23 @@ export class LearningDialog{
     this.run={lesson,review,questions,resumeIndex,index:review?0:resumeIndex,phase:review||entry==='quiz'?'quiz':'study',tab:Number.isInteger(entry)?entry:0,chosen:'',order:[],submitted:false,results:[],reviewSaved:false};
     this.onOpen(this.run);this.render();this.dialog.showModal();
   }
-  stopAudio(){this.audio?.pause();if(this.playingButton?.isConnected)this.playingButton.textContent=this.playingLabel;this.audio=null;this.playingButton=null;}
+  stopAudio(){
+    if(this.utterance){this.utterance.onend=null;this.utterance.onerror=null;globalThis.speechSynthesis?.cancel();}
+    if(this.playingButton?.isConnected)this.playingButton.textContent=this.playingLabel;
+    this.utterance=null;this.playingButton=null;
+  }
   async play(text,button){
-    this.stopAudio();const path=audioPath(text);if(!path)return this.toast('这段音频尚未准备好，请稍后重试。');
+    this.stopAudio();
+    if(!globalThis.speechSynthesis||!globalThis.SpeechSynthesisUtterance)return this.toast('当前浏览器不支持设备语音，请使用 Safari、Chrome 或 Edge。');
     this.playingButton=button;this.playingLabel=button.textContent;button.textContent='正在播放…';
-    const audio=new Audio(path);audio.playbackRate=this.dialog.querySelector('#slow-audio')?.checked?.85:1;this.audio=audio;
-    audio.onended=()=>this.stopAudio();audio.onerror=()=>{this.stopAudio();this.toast('音频暂时无法播放，请检查连接后重试。');};
-    try{await audio.play();}catch{this.stopAudio();this.toast('音频暂时无法播放，请重试。');}
+    const utterance=new SpeechSynthesisUtterance(text);utterance.lang='en-US';
+    const voices=speechSynthesis.getVoices().filter(v=>/^en[-_]/i.test(v.lang));
+    utterance.voice=voices.find(v=>v.localService&&/^en[-_]US$/i.test(v.lang))||voices.find(v=>/^en[-_]US$/i.test(v.lang))||voices[0]||null;
+    utterance.rate=this.dialog.querySelector('#slow-audio')?.checked?.7:.85;
+    this.utterance=utterance;
+    utterance.onend=()=>{if(this.utterance===utterance)this.stopAudio();};
+    utterance.onerror=e=>{if(this.utterance!==utterance)return;this.stopAudio();if(!['canceled','interrupted'].includes(e.error))this.toast('设备语音无法播放，请在系统设置中启用英语语音后重试。');};
+    try{speechSynthesis.speak(utterance);}catch{this.stopAudio();this.toast('设备语音暂时无法播放，请重试。');}
   }
   render(){
     const r=this.run;if(!r)return;
