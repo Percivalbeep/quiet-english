@@ -33,6 +33,9 @@ export const weeks = [
   {title:'走进一座新城市',subtitle:'问路 · 交通 · 入住',color:'blue'},
   {title:'多一点独立',subtitle:'需求 · 问题 · 小旅行',color:'lilac'}
 ];
+// Choose a teaching target explicitly rather than hiding the final token.
+const gapTargets=[['I’m','from','live'],['say','understand','repeat'],['need','tickets','total'],['like','bag','have'],['open','open','right'],['help','name','help'],['small','sugar','milk'],['go','here','order'],['much','receipt','cash'],['table','order','ready'],['smaller','try','fit'],['like','all','receipt'],['Where','far','right'],['go','stop','off'],['ticket','single','platform'],['reservation','check','key'],['breakfast','included','floor'],['taxi','address','long'],['contain','ingredients','Without'],['gate','flight','security'],['booked','confirm','guests'],['working','problem','change'],['going','plans','visit'],['change','available','confirm']];
+export function focusedGap(text,target){if(!text.includes(target))throw new Error('Missing teaching target: '+target);return {template:text.replace(target,'____'),answer:target};}
 export const lessons = units.map((u,index)=>{
   const [title,headline,description,goal,a,az,b,bz,c,cz,speaking]=u;
   const id=`day-${String(index+1).padStart(2,'0')}`;
@@ -46,7 +49,7 @@ export const lessons = units.map((u,index)=>{
     {id:`${id}-listen`,type:'listen',skill:'听',prompt:'戴上耳机听一句话，选择它的意思。',audioText:a,options:rotated(options,index),answer:az,explanation:`${a} 表示「${az}」。`},
     {id:`${id}-read`,type:'choice',skill:'读',prompt:`看到「${b}」，它表达什么？`,options:rotated([bz,units[(index+8)%units.length][7],units[(index+15)%units.length][7]],index+1),answer:bz,explanation:`这里的意思是「${bz}」。`},
     {id:`${id}-respond`,type:'choice',skill:'表达准备',prompt:`如果你想表达「${cz}」，应该选哪一句？`,options:rotated([c,units[(index+6)%units.length][8],units[(index+12)%units.length][8]],index+2),answer:c,explanation:`可以说：${c}。选对句子属于表达准备，还不能说明已经会开口。`},
-    {id:`${id}-write`,type:'input',skill:'写',prompt:`表达「${az}」，试着补上缺少的词。`,template:a.replace(/\b([A-Za-z]+)([.!?]?)$/, '____$2'),answer:a.match(/\b([A-Za-z]+)[.!?]?$/)[1],explanation:`完整表达是：${a}`},
+    {id:`${id}-write-focus`,type:'input',skill:'写',prompt:`表达「${az}」，试着补上缺少的词。`,...focusedGap(a,gapTargets[index][0]),explanation:`完整表达是：${a}`},
     {id:`${id}-listen2`,type:'listen',skill:'听',prompt:'再听一句，不看英文，找出正确意思。',audioText:c,options:rotated([cz,units[(index+5)%units.length][9],units[(index+16)%units.length][9]],index),answer:cz,explanation:`你听到的是：${c}`}
   ];
   const vocabularyQuestions=content.vocabulary.flatMap((word,i)=>[
@@ -54,14 +57,14 @@ export const lessons = units.map((u,index)=>{
     ...(i%2===(index%2)?[{id:`${id}-vocab-write-${i}`,type:'input',skill:'词汇',section:'拼写回忆',wordId:word.id,prompt:`回忆词汇：写出「${word.zh}」的英文。`,template:'先回忆，再输入；不用追求一次记住。',answer:word.en,explanation:`${word.en}：${word.zh}。${word.example}`}]:[{id:`${id}-vocab-listen-${i}`,type:'listen',skill:'词汇',section:'听音辨词',wordId:word.id,prompt:'听一个词语，选择它在本课中的意思。',audioText:word.en,options:rotated([word.zh,content.vocabulary[(i+1)%8].zh,content.vocabulary[(i+4)%8].zh],i),answer:word.zh,explanation:`你听到的是 ${word.en}，意思是「${word.zh}」。`}])
   ]);
   const extraQuestions=content.extra.flatMap(([en,zh],i)=>{
-    const answer=en.match(/\b([A-Za-z]+)[.!?]?$/)[1];
-    return [{id:`${id}-extra-gap-${i}`,type:'input',skill:'写',section:'表达填空',prompt:`表达「${zh}」，补上缺少的词。`,template:en.replace(/\b([A-Za-z]+)([.!?]?)$/,'____$2'),answer,explanation:`完整表达：${en}`},
+    const gap=focusedGap(en,gapTargets[index][i+1]);
+    return [{id:`${id}-extra-gap-focus-${i}`,type:'input',skill:'写',section:'表达填空',prompt:`表达「${zh}」，补上缺少的词。`,...gap,explanation:`完整表达：${en}`},
       {id:`${id}-order-${i}`,type:'order',skill:'表达准备',section:'组句练习',prompt:`把词语排成一句话，表达「${zh}」。`,tokens:rotated(en.split(' ').slice().reverse(),i+1),answer:en,explanation:`可以这样说：${en}`}];
   });
   const dialogueText=content.dialogue.map(d=>d[1]).join('\n');
   const dialogueQuestions=[1,5].map((turn,i)=>({id:`${id}-dialogue-${i}`,type:'listen',skill:'听',section:'情境对话',prompt:i?'听完整段对话，最后一句表达什么意思？':'听完整段对话，第二位说话者第一次回应表达什么意思？',audioText:dialogueText,options:rotated([content.dialogue[turn][2],content.dialogue[(turn+2)%6][2],content.dialogue[(turn+4)%6][2]],index+i),answer:content.dialogue[turn][2],explanation:`对应原句是：${content.dialogue[turn][1]}` }));
   const readingQuestions=content.facts.map(([prompt,answer,distractors],i)=>({id:`${id}-reading-${i}`,type:'reading',skill:'读',section:'短文任务',prompt,passage:content.reading,translation:content.translation,options:rotated([answer,...distractors],index+i),answer,explanation:`根据短文，应选「${answer}」。${content.translation}`}));
-  return {id,version:2,day:index+1,week:Math.floor(index/6)+1,title,headline,description,goal,phrases,vocabulary:content.vocabulary,dialogue:content.dialogue,dialogueText,reading:content.reading,translation:content.translation,tip:content.tip,questions:[...vocabularyQuestions,...questions.map(q=>({...q,section:'基础表达'})),...extraQuestions,...dialogueQuestions,...readingQuestions],speaking,minutes:25};
+  return {id,version:3,day:index+1,week:Math.floor(index/6)+1,title,headline,description,goal,phrases,vocabulary:content.vocabulary,dialogue:content.dialogue,dialogueText,reading:content.reading,translation:content.translation,tip:content.tip,questions:[...vocabularyQuestions,...questions.map(q=>({...q,section:'基础表达'})),...extraQuestions,...dialogueQuestions,...readingQuestions],speaking,minutes:25};
 });
 export function audioPath(text) {
   return audioManifest[text]?.path||null;

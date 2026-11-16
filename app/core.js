@@ -20,7 +20,7 @@ export function lessonStats(lesson, events, userId) {
   const answers = relevant.filter(e=>e.kind==='answer');
   const latest = new Map(), first = new Map();
   const retrievalLatest=new Map();
-  for(const e of relevant.filter(e=>['answer','review_answer'].includes(e.kind)))retrievalLatest.set(e.payload.questionId,e);
+  for(const e of relevant.filter(e=>['answer','review_answer'].includes(e.kind)&&e.payload.questionId))retrievalLatest.set(e.payload.questionId,e);
   for (const e of answers) { latest.set(e.payload.questionId,e); if (!first.has(e.payload.questionId)) first.set(e.payload.questionId,e); }
   const ids = lesson.questions.map(q=>q.id);
   const answered = ids.filter(id=>latest.has(id)).length;
