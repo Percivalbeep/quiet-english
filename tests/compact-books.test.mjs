@@ -21,3 +21,7 @@ test('saved vocabulary from both sources uses the same private stream and can be
  const original=ev({questionId:q.id,answer:'x',correct:false},'answer');const events=[original,ev({activity:'saved_word',word:'water',meaning:'水',active:true,source:'vocabulary'}),ev({activity:'saved_word',word:'tomorrow',meaning:'明天',active:true,source:'reading'})];
  assert.equal(savedWords(events,u,l.id).length,2);events.push(ev({activity:'saved_word',word:'water',active:false}));assert.deepEqual(savedWords(events,u,l.id).map(w=>w.en),['tomorrow']);assert.ok(events.includes(original));assert.equal(savedWords(events,'other',l.id).length,0);
 });
+
+test('standalone saved-word dictation returns to its notebook instead of opening the course vocabulary stage',async()=>{
+ const {LearningDialog}=await import('../app/learning.js');let closed=false;const d=new LearningDialog({dialog:{addEventListener(){},close(){closed=true}},getUserId:()=>u,onOpen(){}});d.open=()=>{};d.render=()=>{};d.openWords(l,[{en:'water',id:'personal-water',zh:'水'}]);assert.equal(d.run.standalone,true);d.back();assert.ok(closed);
+});
