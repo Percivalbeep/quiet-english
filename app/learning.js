@@ -1,3 +1,4 @@
+import {dictionaryEntry} from './dictionary.js';
 import {systemAudio} from './system-audio.js';
 import {stageQuestions,interleave} from './practice.js';
 import {readingMarkup,savedWords,dictationQuestions,savedReviewQuestions} from './vocabulary.js';
@@ -8,7 +9,8 @@ const tabs=['1. 生词与记忆','2. 句子与用法','3. 课文与检测'];
 export class LearningDialog{
   constructor({dialog,getStats,getRole,getEvents,getUserId,save,hasCompletion,syncText,onOpen,onClose,onComplete,toast}){
     Object.assign(this,{dialog,getStats,getRole,getEvents,getUserId,save,hasCompletion,syncText,onOpen,onClose,onComplete,toast});
-    dialog.addEventListener('cancel',e=>{if(this.run?.parent){e.preventDefault();this.back();}});
+    dialog.addEventListener('click',e=>{const popup=dialog.querySelector('.word-popup');if(popup&&!popup.contains(e.target)&&!e.target.closest('.reading-word'))popup.remove();});
+    dialog.addEventListener('cancel',e=>{const popup=dialog.querySelector('.word-popup');if(popup){e.preventDefault();popup.remove();return;}if(this.run?.parent){e.preventDefault();this.back();}});
     dialog.addEventListener('close',()=>{this.stopAudio();if(!this.run?.mistakes){this.paused=this.run;try{localStorage.setItem('quiet-stage:'+this.getUserId()+':'+this.run.lesson.id,String(this.run.tab));}catch{}}this.run=null;this.onClose();});
   }
   open(lesson,review=false,entry=0){
@@ -18,12 +20,21 @@ export class LearningDialog{
     if(!review&&entry===0){try{const tab=Number(localStorage.getItem('quiet-stage:'+this.getUserId()+':'+lesson.id));if(Number.isInteger(tab)&&tab>=0&&tab<=2)this.run.tab=tab;}catch{}if(this.paused?.lesson.id===lesson.id&&this.paused.ownerUserId===this.getUserId?.())this.run=this.paused;}
     this.onOpen(this.run);this.render();this.dialog.showModal();
   }
-  back(){this.stopAudio();const r=this.run;if(r.mistakes){this.dialog.close();return;}if(r.parent){this.run=r.parent;this.onOpen(this.run);}else if(r.phase!=='study'){r.phase='study';r.chosen='';r.order=[];r.submitted=false;}else r.tab=Math.max(0,r.tab-1);this.render();}
+  back(){this.rememberDictation();this.stopAudio();const r=this.run;if(r.mistakes){this.dialog.close();return;}if(r.parent){this.run=r.parent;this.onOpen(this.run);}else if(r.phase!=='study'){r.phase='study';r.chosen='';r.order=[];r.submitted=false;}else r.tab=Math.max(0,r.tab-1);this.render();}
   startStage(){const r=this.run;this.stopAudio();const questions=stageQuestions(r.lesson,r.tab);const saved=this.getStats(r.lesson);Object.assign(r,{questions,phase:'quiz',stagePractice:true,practice:false,review:false,index:Math.max(0,questions.findIndex(q=>!saved.latest.has(q.id))),chosen:'',order:[],submitted:false,results:[],reviewSaved:false});this.render();}
   openMistakes(lesson,questions){this.open(lesson,false,0);this.run={lesson,questions:interleave(questions),phase:'quiz',index:0,tab:0,review:true,practice:true,mistakes:true,results:[],order:[],chosen:'',submitted:false};this.onOpen(this.run);this.render();}
+  rememberDictation(){const r=this.run;if(!r?.parent||!r.practice||r.mistakes)return;try{localStorage.setItem('quiet-dictation:'+this.getUserId()+':'+r.lesson.id,JSON.stringify({index:r.index,chosen:r.chosen,order:r.order,submitted:r.submitted,results:r.results,phase:r.phase,ids:r.questions.map(q=>q.id)}));}catch{}}
+  showWord(button){
+    this.dialog.querySelector('.word-popup')?.remove();const word=button.dataset.saveReadingWord,entry=dictionaryEntry(word,this.run.lesson),panel=document.createElement('aside');panel.className='word-popup';panel.setAttribute('role','dialog');panel.setAttribute('aria-label',word+' 词条');
+    panel.innerHTML=`<div class="section-top"><strong>${esc(word)}</strong><button type="button" class="text-button" aria-label="关闭词条">✕</button></div><p>${esc(entry.pos)} ${esc(entry.meaning)}</p><p class="word-example" lang="en">${esc(entry.example)}</p><small>课程词条 · 例句来自本课</small><div class="word-popup-actions">${this.audioButton(word,'▶ 发音')}<button type="button" class="secondary" data-add-word>加入单词本</button></div>`;
+    button.parentElement.appendChild(panel);const bounds=this.dialog.getBoundingClientRect(),rect=button.getBoundingClientRect();panel.style.left=Math.max(bounds.left+16-rect.left,Math.min(0,bounds.right-16-rect.left-300))+'px';
+    panel.querySelector('[aria-label="关闭词条"]').onclick=()=>{panel.remove();button.focus();};panel.querySelector('[data-audio]').onclick=e=>this.play(word,e.currentTarget);
+    const add=panel.querySelector('[data-add-word]'),isSaved=savedWords(this.getEvents(),this.getUserId(),this.run.lesson.id).some(w=>w.en.toLowerCase()===word.toLowerCase());if(isSaved){add.textContent='已加入单词本';add.disabled=true;}
+    add.onclick=()=>{if(this.getRole()!=='learner')return this.toast('请由学习者收藏生词。');try{this.save('review_answer',this.run.lesson.id,{activity:'saved_word',word,meaning:entry.meaning,active:true});add.textContent='已加入单词本';add.disabled=true;}catch(error){this.toast(error.message);}};
+  }
   startDictation(){
     this.stopAudio();const r=this.run;const words=[...r.lesson.vocabulary,...savedWords(this.getEvents(),this.getUserId(),r.lesson.id)];
-    this.run={...r,parent:{...r},questions:dictationQuestions(r.lesson,words),review:true,practice:true,index:0,phase:'quiz',chosen:'',order:[],submitted:false,results:[]};this.onOpen(this.run);this.render();this.dialog.scrollTop=0;
+    this.run={...r,parent:{...r},questions:dictationQuestions(r.lesson,words),review:true,practice:true,index:0,phase:'quiz',chosen:'',order:[],submitted:false,results:[]};try{const draft=JSON.parse(localStorage.getItem('quiet-dictation:'+this.getUserId()+':'+r.lesson.id)||'null');if(draft&&JSON.stringify(draft.ids)===JSON.stringify(this.run.questions.map(q=>q.id))&&Number.isInteger(draft.index)&&draft.index>=0&&draft.index<=this.run.questions.length)Object.assign(this.run,{index:draft.index,chosen:draft.chosen||'',order:draft.order||[],submitted:!!draft.submitted,results:draft.results||[],phase:draft.phase==='summary'?'summary':'quiz'});}catch{}this.onOpen(this.run);this.render();this.dialog.scrollTop=0;
   }
   stopAudio(){
     clearTimeout(this.audioTimer);
@@ -60,7 +71,7 @@ export class LearningDialog{
     try{speechSynthesis.speak(utterance);}catch{this.stopAudio();this.toast('设备语音暂时无法播放，请重试。');}
   }
   render(){
-    const r=this.run;if(!r)return;
+    const r=this.run;if(!r)return;this.rememberDictation();
     this.dialog.innerHTML=`<div class="dialog-top"><span class="eyebrow">${r.mistakes?'错题复习':r.practice?'单词听写':r.review?'间隔复习':'DAY '+String(r.lesson.day).padStart(2,'0')} · ${esc(r.lesson.title)}</span><button class="icon-button" data-close aria-label="${r.parent?'返回学习':'暂停并关闭'}">✕</button></div>${r.phase==='study'?this.studyView():r.phase==='quiz'?this.quizView():this.summaryView()}`;
     this.dialog.querySelector('[data-close]').onclick=()=>{if(r.parent)this.back();else this.dialog.close();};
     this.dialog.querySelector('[data-back]')?.addEventListener('click',()=>this.back());
@@ -68,15 +79,13 @@ export class LearningDialog{
     this.dialog.querySelectorAll('[data-audio]').forEach(b=>b.onclick=()=>this.play(b.dataset.audio,b));
     this.dialog.querySelectorAll('[data-study-tab]').forEach(b=>b.onclick=()=>{this.stopAudio();r.tab=Number(b.dataset.studyTab);this.render();this.dialog.scrollTop=0;});
     this.dialog.querySelectorAll('[data-dictation]').forEach(b=>b.onclick=()=>this.startDictation());
-    this.dialog.querySelectorAll('[data-save-reading-word]').forEach(b=>b.onclick=()=>{const field=this.dialog.querySelector('#new-word');field.value=b.dataset.saveReadingWord;field.focus();});
-    this.dialog.querySelector('#save-reading-word')?.addEventListener('submit',e=>{e.preventDefault();if(this.getRole()!=='learner')return this.toast('请由学习者保存自己的生词。');const en=this.dialog.querySelector('#new-word').value.trim(),zh=this.dialog.querySelector('#new-meaning').value.trim();if(!/^[a-zA-Z]+(?:[’\x27-][a-zA-Z]+)*(?: [a-zA-Z]+(?:[’\x27-][a-zA-Z]+)*)*$/.test(en)||en.length>80)return this.toast('请输入80字符以内的英文词语或词组。');this.save('review_answer',r.lesson.id,{activity:'saved_word',word:en,meaning:zh,active:true});this.render();this.toast('已加入本课生词，可在下次回看和听写。');});
-    this.dialog.querySelectorAll('[data-remove-word]').forEach(b=>b.onclick=()=>{if(this.getRole()!=='learner')return;this.save('review_answer',r.lesson.id,{activity:'saved_word',word:b.dataset.removeWord,active:false});this.render();});
+    this.dialog.querySelectorAll('[data-save-reading-word]').forEach(b=>b.onclick=()=>this.showWord(b));
     this.dialog.querySelector('#next-study')?.addEventListener('click',()=>{this.stopAudio();r.tab++;this.render();this.dialog.scrollTop=0;});
     this.dialog.querySelectorAll('[data-start-quiz]').forEach(b=>b.onclick=()=>{this.startStage();this.dialog.scrollTop=0;});
     this.dialog.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{if(r.submitted)return;r.chosen=b.dataset.choice;this.dialog.querySelectorAll('[data-choice]').forEach(x=>{x.classList.toggle('selected',x===b);x.setAttribute('aria-pressed',String(x===b));});this.dialog.querySelector('#submit-answer').disabled=false;});
     this.dialog.querySelectorAll('[data-token]').forEach(b=>b.onclick=()=>{if(r.submitted)return;r.order.push(Number(b.dataset.token));this.render();});
     this.dialog.querySelectorAll('[data-remove-token]').forEach(b=>b.onclick=()=>{if(r.submitted)return;r.order.splice(Number(b.dataset.removeToken),1);this.render();});
-    this.dialog.querySelector('#typed-answer')?.addEventListener('input',e=>{r.chosen=e.target.value;});
+    this.dialog.querySelector('#typed-answer')?.addEventListener('input',e=>{r.chosen=e.target.value;this.rememberDictation();});
     this.dialog.querySelector('#answer-form')?.addEventListener('submit',e=>this.submit(e));
     this.dialog.querySelector('#next-question')?.addEventListener('click',()=>{this.stopAudio();r.index++;r.chosen='';r.order=[];r.submitted=false;if(r.index===r.questions.length)this.finish();else this.render();this.dialog.scrollTop=0;});
     this.dialog.querySelector('#finish-lesson')?.addEventListener('click',()=>{if(r.parent)this.back();else this.dialog.close();});
@@ -92,8 +101,7 @@ export class LearningDialog{
     if(r.tab===-1)body=`<h2 id="lesson-heading">听出一句话的来回。</h2><p class="muted">先听完整段，抓住正在做什么；再分句看。听不懂时可以重听，不需要在工位开口。</p><div class="dialogue-play">${this.audioButton(l.dialogueText,'▶ 听整段情境对话')}<label class="slow-toggle"><input id="slow-audio" type="checkbox"> 慢一点听</label></div><div class="dialogue-transcript">${l.dialogue.map(([speaker,en,zh])=>`<article class="speaker-${speaker.toLowerCase()}"><span>${speaker}</span><div><p lang="en">${esc(en)}</p><details><summary>看中文意思</summary><small>${esc(zh)}</small></details></div></article>`).join('')}</div>`;
     if(r.tab===2)body=`<h2 id="lesson-heading">读懂一小段生活信息。</h2><p class="muted">带着三个问题阅读：谁、要做什么、有哪些关键信息？不认识的词可返回单词页查看。</p><details class="translation-help"><summary>先听情境对话，看看这些表达怎样使用</summary><p class="small-note">A、B使用不同音色，换人时有停顿。</p>${this.audioButton(l.dialogueText,'▶ 听情境对话')}${l.dialogue.map(([speaker,en,zh])=>`<p lang="en">${speaker} · ${speaker==='A'?'女声':'男声'}：${esc(en)}</p><small>${esc(zh)}</small>`).join('')}</details><div class="reading-passage" lang="en">${readingMarkup(l.reading)}</div><details class="translation-help"><summary>需要帮助时，看中文参考</summary><p>${esc(l.translation)}</p></details><div class="lesson-tip">接下来通过课文理解和听力问题检查掌握情况。可以随时暂停，提交过的答案会保存。</div>`;
     const personal=savedWords(this.getEvents?.()||[],this.getUserId?.(),l.id);
-    const wordTools=`<section class="lesson-tip"><strong>单词听写与本课生词</strong><p>听英语、输入拼写，提交后再看答案。包含本课8个词和自己收藏的生词。</p><button class="secondary" data-dictation>开始本课单词听写（${dictationQuestions(l,[...l.vocabulary,...personal]).length}词）</button>${r.tab===2?`<p>点击短文中的英文词，或手动输入词组；可补充中文意思。</p><form id="save-reading-word"><label>英文词语或词组<input id="new-word" maxlength="80" required autocomplete="off"></label><label>中文意思（选填）<input id="new-meaning" maxlength="100"></label><button class="secondary" type="submit">加入本课生词</button></form>`:''}<div class="personal-words">${personal.map(w=>`<div><strong>${esc(w.en)}</strong> ${esc(w.zh||'待补充释义')} ${this.audioButton(w.en)}<button class="text-button" data-remove-word="${esc(w.en)}">移除</button></div>`).join('')||'<p>还没有收藏生词。可到「读懂生活信息」中添加。</p>'}</div></section>`;
-    return `<div class="study-tabs" role="tablist">${tabs.map((t,i)=>`<button role="tab" aria-selected="${i===r.tab}" data-study-tab="${i}">${t}</button>`).join('')}</div>${body}${r.tab===0||r.tab===2?wordTools:''}<div class="study-actions">${r.tab>0?'<button class="secondary wide" data-back>← 返回上一部分</button>':''}${r.tab<2?`<button class="primary wide" id="next-study">下一段：${tabs[r.tab+1]} →</button><button class="text-button wide" data-start-quiz>练一练这一部分</button>`:`<button class="primary wide" data-start-quiz>开始课文理解与听力检测 →</button>`}</div><p class="small-note">建议20—30分钟，包含复听、回忆和复习；可拆成4次短练。${this.getRole()==='teacher'?'陪练预览不会写入学习者成绩。':''}</p>`;
+    return `<div class="study-tabs" role="tablist">${tabs.map((t,i)=>`<button role="tab" aria-selected="${i===r.tab}" data-study-tab="${i}">${t}</button>`).join('')}</div>${body}${r.tab===0?`<div class="dictation-entry"><p>听发音，回忆拼写；可随时返回单词列表，再接着听写。</p><button class="secondary" data-dictation>听写本课单词（${dictationQuestions(l,[...l.vocabulary,...personal]).length}词）</button></div>`:''}<div class="study-actions">${r.tab>0?'<button class="secondary wide" data-back>← 返回上一部分</button>':''}${r.tab<2?`<button class="primary wide" id="next-study">下一段：${tabs[r.tab+1]} →</button><button class="text-button wide" data-start-quiz>练一练这一部分</button>`:`<button class="primary wide" data-start-quiz>开始课文理解与听力检测 →</button>`}</div><p class="small-note">建议20—30分钟，包含复听、回忆和复习；可拆成4次短练。${this.getRole()==='teacher'?'陪练预览不会写入学习者成绩。':''}</p>`;
   }
   quizView(){
     const r=this.run,q=r.questions[r.index];let input='';

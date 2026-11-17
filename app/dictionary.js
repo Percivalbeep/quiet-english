@@ -1,0 +1,22 @@
+import {lessons} from './curriculum.js';
+const entries=new Map();
+const groups={
+'v.':`accept=接受 arrive=到达 ask=询问 be=是；在 book=预订 buy=购买 call=叫；打电话 carry=携带 change=更换 check=检查 choose=选择 collect=领取 come=来 confirm=确认 contain=含有 cost=花费 do=做 double=再次核对 eat=吃 explain=解释 find=找到 fit=合身 follow=跟随 get=得到；到达 give=给 go=去 have=有；吃 hear=听见 help=帮助 include=包含 know=知道 leave=离开 like=喜欢 listen=听 live=居住 look=看；寻找 make=制作 may=可能 meet=见面 need=需要 notice=注意到 order=点餐 pack=打包 pay=付款 plan=计划 point=指向 read=阅读 repeat=重复 rest=休息 return=返回 save=保存 say=说 serve=供应 shop=购物 show=出示 sit=坐 speak=说 start=开始 stay=停留 stop=停止 take=带走；乘坐 talk=交谈 tell=告诉 travel=旅行 try=尝试 turn=转向 understand=理解 update=更新 visit=参观 wait=等待 walk=步行 want=想要 will=将要 work=工作 write=写 can=能；可以 could=能；可以 should=应该`,
+'n.':`address=地址 air=空气 airport=机场 allergy=过敏 bag=袋子 baggage=行李 bill=账单 booking=预订 bottle=瓶子 break=休息 breakfast=早餐 bus=公交车 caf=咖啡馆 cake=蛋糕 card=银行卡 cash=现金 check-in=入住 check-out=退房 china=中国 claim=领取 clothes=衣服 coffee=咖啡 conditioning=调节 confirmation=确认 copy=副本 cup=杯子 date=日期 desk=服务台 destination=目的地 dinner=晚餐 directions=方向 dollar=美元 driver=司机 entrance=入口 evening=晚上 exit=出口 flight=航班 floor=楼层 food=食物 friday=星期五 front=前面 gate=登机口 guest=客人 hotel=酒店 information=信息 item=物品 journey=旅程 key=钥匙 line=队伍 lunch=午餐 man=男人 meal=一餐 menu=菜单 milk=牛奶 minute=分钟 morning=早晨 museum=博物馆 name=名字 night=夜晚 number=号码 office=办公室 order=订单 oxford=牛津 park=公园 passport=护照 password=密码 peanut=花生 phone=电话 plan=计划 platform=站台 price=价格 problem=问题 receipt=收据 reservation=预订 restaurant=餐厅 right=右侧 room=房间 sandwich=三明治 screen=屏幕 seat=座位 security=安检 seller=售货员 shirt=衬衫 shop=商店 sign=标志 size=尺码 station=车站 stop=车站 street=街道 sugar=糖 sunday=星期日 table=桌子 taxi=出租车 tea=茶 ticket=票 time=时间 total=总额 train=火车 water=水 weather=天气 wi-fi=无线网络 woman=女人 worker=工作人员`,
+'adj.':`allergic=过敏的 available=可用的 another=另一个 clear=清楚的 closed=关闭的 correct=正确的 double=双倍的 extra=额外的 far=远的 first=第一的 fixed=修好的 good=好的 happy=高兴的 hot=热的 iced=冰的 large=大的 last=最后的 left=左边的 lovely=美好的 more=更多的 new=新的 next=下一个 nice=友好的；愉快的 only=仅有的 other=其他的 ready=准备好的 right=正确的 safe=安全的 serious=严重的 short=短的 single=单程的 small=小的 smaller=更小的 sure=确信的 their=他们的 updated=更新后的 written=书面的 your=你的`,
+'adv.':`after=之后 again=再一次 aloud=出声地 also=也 along=沿着 back=回去 because=因为 before=之前 carefully=仔细地 down=向下 here=这里 how=怎样 instead=代替 just=只是 later=稍后 near=附近 not=不 now=现在 off=离开 out=向外 outside=外面 please=请 politely=礼貌地 quickly=迅速地 slowly=慢慢地 so=所以 still=仍然 straight=直地 then=然后 there=那里 today=今天 tomorrow=明天 too=也；太 until=直到 when=什么时候 yesterday=昨天 yet=还`,
+'prep.':`at=在 by=通过 for=为了；给 from=来自 in=在……里 of=……的 on=在……上 to=到 under=在……下面 with=和；带有 without=没有`,
+'pron.':`he=他 her=她；她的 him=他 i=我 it=它 my=我的 she=她 that=那个 them=他们 they=他们 this=这个 we=我们 what=什么 whether=是否 which=哪一个 you=你`,
+'conj.':`and=和 but=但是 if=如果 or=或者`,
+'art.':`a=一个 the=这；该 some=一些`,
+'num.':`one=一 two=二 five=五 seven=七 eight=八 nine=九 ten=十 eleven=十一 twelve=十二 fifteen=十五 twenty=二十 thirty=三十 eighty=八十`,
+'interj.':`hello=你好 yes=是的 thank=感谢`,
+'n.（专名）':`anna=安娜 ben=本 canada=加拿大 shanghai=上海`
+};
+for(const [pos,data] of Object.entries(groups))for(const pair of data.split(' ')){const [word,meaning]=pair.split('=');entries.set(word,{word,pos,meaning});}
+entries.set('open',{word:'open',pos:'v.',meaning:'开门；打开'});entries.set('cannot',{word:'cannot',pos:'modal v.',meaning:'不能'});entries.set('whether',{word:'whether',pos:'conj.',meaning:'是否'});
+const irregular={goes:'go',am:'be',are:'be',is:'be',was:'be',does:'do',has:'have',went:'go',written:'write',making:'make',leaving:'leave',paying:'pay',shopping:'shop',sits:'sit',travelling:'travel',buys:'buy',carries:'carry',chooses:'choose',served:'serve',closed:'closed',included:'include',updated:'updated',fixed:'fixed',ordered:'order',checking:'check',working:'work',resting:'rest',looking:'look',walking:'walk',travelling:'travel',written:'written',"i’d":'i',"that’s":'that',"anna’s":'anna'};
+export function dictionaryEntry(word,lesson){const key=word.toLowerCase();let entry=entries.get(key);if(!entry){const root=irregular[key]||[key.replace(/s$/,''),key.replace(/ed$/,''),key.replace(/ing$/,'')].find(k=>entries.has(k));entry=entries.get(root);}
+ const own=lesson?.vocabulary.find(w=>w.en.toLowerCase()===key);const anywhere=own||lessons.flatMap(l=>l.vocabulary).find(w=>w.en.toLowerCase()===key);
+ const sentence=lesson?.reading.split(/(?<=[.!?])\s+/).find(s=>new RegExp('\\b'+key+'\\b','i').test(s))||anywhere?.example||'';
+ return {word,pos:entry?.pos||'',meaning:own?.zh||entry?.meaning||anywhere?.zh||'暂无课程释义',example:sentence};}
