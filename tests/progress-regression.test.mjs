@@ -12,19 +12,37 @@ function harness(events=[]){
   const d=new LearningDialog({dialog:{addEventListener:(name,fn)=>handlers.set(name,fn),showModal(){},querySelector(){return null},scrollTop:0},getStats:l=>lessonStats(l,state.events,user),getUserId:()=>user,getEvents:()=>state.events,getRole:()=> 'learner',syncText:()=> '本机已保存 · 等待上传',onOpen(){},onClose(){},onComplete(){},hasCompletion:l=>state.events.some(e=>e.kind==='complete'&&e.lesson_id===l.id),save:(kind,lessonId,payload)=>{state.events.push(createEvent({actorId:user,familyId:'f',lessonId,kind,payload}));},toast:m=>assert.fail(m)});
   d.render=()=>{};return {d,state,handlers};
 }
-test('the reported fourth-lesson path preserves five reading answers and identifies the two missing stages',()=>{
+test('the reported fourth-lesson path completes the lesson using five assessment answers without optional drills',()=>{
   const questions=stageQuestions(lesson,2),events=questions.flatMap(q=>[answer(q),answer(q)]);
-  const s=lessonStats(lesson,events,user);assert.equal(s.answered,5);assert.equal(s.complete,false);
+  const s=lessonStats(lesson,events,user);assert.equal(s.answered,5);assert.equal(s.complete,true);assert.equal(s.currentContentComplete,false);
   assert.deepEqual(stageProgress(lesson,s).map(s=>s.complete),[false,false,true]);
-  const {d}=harness(events);d.open(lesson);assert.equal(d.run.tab,0);assert.match(d.studyView(),/开始生词练习/);assert.doesNotMatch(d.studyView(),/id="next-study"/);
+  const {d}=harness(events);d.open(lesson);assert.equal(d.run.tab,0);assert.match(d.studyView(),/开始生词练习/);assert.match(d.studyView(),/id="next-study"/);
   d.run.tab=2;d.startStage();assert.equal(d.run.phase,'summary');assert.equal(d.run.index,5);
-  const summary=d.summaryView();assert.match(summary,/整课还有练习/);assert.match(summary,/已做的题目无需重做/);assert.match(summary,/继续尚未完成的部分/);assert.doesNotMatch(summary,/本课已完成，进步已保存/);
+  const summary=d.summaryView();assert.match(summary,/本课已完成，进步已保存/);assert.match(summary,/课文检测已作答 5 \/ 5/);assert.doesNotMatch(summary,/继续课文检测/);
 });
 test('a complete stage does not restart at zero, while a stage with holes resumes its first missing question',()=>{
   const questions=stageQuestions(lesson,0),events=questions.filter((q,i)=>i!==3).map(q=>answer(q));
   const {d,state}=harness(events);d.open(lesson);d.startStage();assert.equal(d.run.index,3);
   state.events.push(answer(questions[3]));d.startStage();assert.equal(d.run.index,questions.length);assert.equal(d.run.phase,'summary');
   assert.equal(firstUnanswered(questions,lessonStats(lesson,state.events,user)),questions.length);
+});
+test('all 48 lessons complete on submitted assessment answers, even when wrong; optional answers cannot substitute for a missing assessment',()=>{
+  for(const l of lessons){
+    const required=stageQuestions(l,2),events=required.map(q=>{const e=answer(q,l);e.payload.correct=false;return e;});
+    const s=lessonStats(l,events,user);assert.ok(s.complete,l.id);assert.equal(s.correct,0);assert.equal(s.assessmentAnswered,required.length);assert.equal(s.answered,required.length);
+    const stamps=completionEvents(lessons,events,user,'f');assert.equal(stamps.length,1);assert.equal(stamps[0].payload.completionRule,'reading-assessment-v1');assert.equal(stamps[0].payload.questions,required.length);
+    const missing=required.at(-1),partial=l.questions.filter(q=>q.id!==missing.id).map(q=>answer(q,l));
+    partial.push(answer(required[0],l));assert.equal(lessonStats(l,partial,user).complete,false);assert.deepEqual(completionEvents(lessons,partial,user,'f'),[]);
+  }
+});
+test('the existing invited learner assessment records advance the homepage to lesson five and sync completion to another device',async()=>{
+  const remote=new Map(),cloud={pushEvents:async rows=>rows.forEach(e=>remote.set(e.id,e)),pullEvents:async()=>[...remote.values()]};
+  const firstThree=lessons.slice(0,3).map(l=>createEvent({actorId:user,familyId:'f',lessonId:l.id,kind:'complete'}));
+  const a=new LocalStore(disk(),'a'),b=new LocalStore(disk(),'b');a.appendMany([...firstThree,...stageQuestions(lesson,2).map(q=>answer(q))]);
+  a.appendMany(completionEvents(lessons,a.read().events,user,'f'));
+  await new SyncEngine({store:a,cloud}).sync(true);await new SyncEngine({store:b,cloud}).sync(true);
+  assert.equal(recommendedLesson(lessons,b.read().events,user,null).id,'day-05');assert.equal(lessonStats(lesson,b.read().events,user).answered,5);
+  assert.equal(b.read().events.filter(e=>e.lesson_id===lesson.id&&e.kind==='complete').length,1);
 });
 test('a paused submitted question or remote completion never overrides newer persisted progress',()=>{
   const {d,state}=harness();d.open(lesson);d.startStage();const old={...d.run};
@@ -42,7 +60,7 @@ test('the last answer and completion marker are durably stored together before c
   assert.deepEqual(completionEvents(lessons,reload.events,user,'f'),[]);
 });
 test('legacy full answer sets recover missing completion stamps, without awarding incomplete or optional work',()=>{
-  const full=lesson.questions.map(q=>answer(q));const recovered=completionEvents(lessons,full,user,'f');assert.equal(recovered.length,1);assert.equal(recovered[0].created_at,full.at(-1).created_at);
+  const full=stageQuestions(lesson,2).map(q=>answer(q));const recovered=completionEvents(lessons,full,user,'f');assert.equal(recovered.length,1);assert.equal(recovered[0].created_at,full.at(-1).created_at);
   assert.deepEqual(completionEvents(lessons,full.slice(1),user,'f'),[]);
   assert.deepEqual(completionEvents(lessons,full.map(e=>({...e,kind:'review_answer'})),user,'f'),[]);
   assert.deepEqual(completionEvents(lessons,full,'original-learner','f'),[]);

@@ -15,6 +15,9 @@ export function mergeEvents(...groups) {
   for (const group of groups) for (const e of group) if (e?.id) map.set(e.id, e);
   return [...map.values()].sort((a,b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
 }
+export function completionQuestions(lesson) {
+  return lesson.questions.filter(q=>['情境对话','短文任务'].includes(q.section));
+}
 export function lessonStats(lesson, events, userId) {
   const relevant = events.filter(e => e.actor_id === userId && e.lesson_id === lesson.id);
   const answers = relevant.filter(e=>e.kind==='answer');
@@ -27,8 +30,10 @@ export function lessonStats(lesson, events, userId) {
   const correct = ids.filter(id=>latest.get(id)?.payload.correct).length;
   const firstCorrect = ids.filter(id=>first.get(id)?.payload.correct).length;
   const completions=relevant.filter(e=>e.kind==='complete');
+  const assessmentIds=completionQuestions(lesson).map(q=>q.id),assessmentAnswered=assessmentIds.filter(id=>latest.has(id)).length;
+  const assessmentComplete=assessmentIds.length>0&&assessmentAnswered===assessmentIds.length;
   const historicalAnswered=first.size,historicalFirstCorrect=[...first.values()].filter(e=>e.payload.correct).length;
-  return {answered,correct,firstCorrect,historicalAnswered,historicalFirstCorrect,additionalQuestions:ids.length-answered,currentContentComplete:answered===ids.length,total:ids.length,complete:completions.length>0||answered===ids.length,legacyComplete:relevant.some(e=>e.kind==='complete'&&(e.payload.curriculumVersion||1)<(lesson.version||1)),
+  return {answered,correct,firstCorrect,historicalAnswered,historicalFirstCorrect,assessmentAnswered,assessmentTotal:assessmentIds.length,assessmentComplete,additionalQuestions:ids.length-answered,currentContentComplete:answered===ids.length,total:ids.length,complete:completions.length>0||assessmentComplete,legacyComplete:relevant.some(e=>e.kind==='complete'&&(e.payload.curriculumVersion||1)<(lesson.version||1)),
     speaking:relevant.some(e=>e.kind==='speaking'), reviews:relevant.filter(e=>e.kind==='review'), latest, first,retrievalLatest};
 }
 export function reviewState(lesson, events, userId, now = Date.now()) {
@@ -50,12 +55,13 @@ export function createEvent({actorId,familyId,lessonId,kind,payload={},now=new D
   return {id, actor_id:actorId, family_id:familyId, lesson_id:lessonId, kind, payload, created_at:now.toISOString()};
 }
 export function unfinishedLessons(lessons,events,userId) {
-  return lessons.filter(l=>{const s=lessonStats(l,events,userId);return s.currentContentComplete&&!events.some(e=>e.actor_id===userId&&e.lesson_id===l.id&&e.kind==='complete');});
+  return lessons.filter(l=>{const s=lessonStats(l,events,userId);return s.assessmentComplete&&!events.some(e=>e.actor_id===userId&&e.lesson_id===l.id&&e.kind==='complete');});
 }
 export function completionEvents(lessons,events,actorId,familyId) {
   return unfinishedLessons(lessons,events,actorId).map(l=>{
-    const last=events.filter(e=>e.actor_id===actorId&&e.lesson_id===l.id&&e.kind==='answer').at(-1);
-    return createEvent({actorId,familyId,lessonId:l.id,kind:'complete',now:new Date(last.created_at),payload:{silentPractice:true,curriculumVersion:l.version,questions:l.questions.length,recoveredFromAnswers:true}});
+    const required=completionQuestions(l),ids=new Set(required.map(q=>q.id));
+    const last=events.filter(e=>e.actor_id===actorId&&e.lesson_id===l.id&&e.kind==='answer'&&ids.has(e.payload.questionId)).at(-1);
+    return createEvent({actorId,familyId,lessonId:l.id,kind:'complete',now:new Date(last.created_at),payload:{silentPractice:true,curriculumVersion:l.version,questions:required.length,completionRule:'reading-assessment-v1',recoveredFromAnswers:true}});
   });
 }
 export function recommendedLesson(lessons,events,userId,assignment) {
