@@ -15,8 +15,9 @@ const groups={
 };
 for(const [pos,data] of Object.entries(groups))for(const pair of data.split(' ')){const [word,meaning]=pair.split('=');entries.set(word,{word,pos,meaning});}
 entries.set('open',{word:'open',pos:'v.',meaning:'开门；打开'});entries.set('cannot',{word:'cannot',pos:'modal v.',meaning:'不能'});entries.set('whether',{word:'whether',pos:'conj.',meaning:'是否'});
+entries.set('café',{word:'café',pos:'n.',meaning:'咖啡馆'});entries.set('i’d',{word:'i’d',pos:'pron. + modal v.',meaning:'我想要；我会（I would的缩写）'});entries.set('that’s',{word:'that’s',pos:'pron. + v.',meaning:'那是（that is的缩写）'});entries.set('anna’s',{word:'anna’s',pos:'n.（所有格）',meaning:'安娜的'});for(const [word,meaning] of Object.entries({order:'订单；点餐',shop:'商店；购物',plan:'计划',stop:'站点；停止'}))entries.set(word,{word,pos:'n./v.',meaning});
 const irregular={goes:'go',am:'be',are:'be',is:'be',was:'be',does:'do',has:'have',went:'go',written:'write',making:'make',leaving:'leave',paying:'pay',shopping:'shop',sits:'sit',travelling:'travel',buys:'buy',carries:'carry',chooses:'choose',served:'serve',closed:'closed',included:'include',updated:'updated',fixed:'fixed',ordered:'order',checking:'check',working:'work',resting:'rest',looking:'look',walking:'walk',travelling:'travel',written:'written',"i’d":'i',"that’s":'that',"anna’s":'anna'};
 export function dictionaryEntry(word,lesson){const key=word.toLowerCase();let entry=entries.get(key);if(!entry){const root=irregular[key]||[key.replace(/s$/,''),key.replace(/ed$/,''),key.replace(/ing$/,'')].find(k=>entries.has(k));entry=entries.get(root);}
  const own=lesson?.vocabulary.find(w=>w.en.toLowerCase()===key);const anywhere=own||lessons.flatMap(l=>l.vocabulary).find(w=>w.en.toLowerCase()===key);
- const sentence=lesson?.reading.split(/(?<=[.!?])\s+/).find(s=>new RegExp('\\b'+key+'\\b','i').test(s))||anywhere?.example||'';
+ const sentence=lesson?.reading.split(/(?<=[.!?])\s+/).find(s=>new RegExp('(^|[^A-Za-zÀ-ÿ])'+key+'(?=$|[^A-Za-zÀ-ÿ])','i').test(s))||anywhere?.example||'';
  return {word,pos:entry?.pos||'',meaning:own?.zh||entry?.meaning||anywhere?.zh||'暂无课程释义',example:sentence};}
