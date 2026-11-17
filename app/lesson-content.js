@@ -1,3 +1,4 @@
+import {extensionContent} from './extension-content.js';
 // Every reading recycles the lesson's vocabulary in a concrete adult context.
 // Alternatives are deliberately close enough to require comprehension.
 const data = [
@@ -218,4 +219,4 @@ const data = [
     tip:'one more night 是再住一晚。修改预订后，确认新的日期、总价与包含项目。'
   }
 ];
-export const lessonContent=data.map((item,index)=>({...item,vocabulary:item.words.split(';').map(pair=>{const [en,zh]=pair.split('|');const pool=[item.reading,...item.dialogue.map(d=>d[1]),...item.extra.map(p=>p[0])];const text=pool.find(t=>t.toLowerCase().includes(en.toLowerCase()))||item.reading;const sentences=text.match(/[^.!?]+[.!?]?[”"]?/g)||[text];return {id:`word-${en.toLowerCase().replace(/[^a-z0-9]/g,'-')}`,en,zh,example:sentences.find(s=>s.toLowerCase().includes(en.toLowerCase()))?.trim()||text};})}));
+export const lessonContent=data.concat(extensionContent).map((item,index)=>({...item,vocabulary:item.words.split(';').map(pair=>{const [en,zh,pos]=pair.split('|');const pool=[item.reading,...item.dialogue.map(d=>d[1]),...item.extra.map(p=>p[0]),...(item.phrases||[]).map(p=>p[0])];const text=pool.find(t=>t.toLowerCase().includes(en.toLowerCase()))||item.reading;const sentences=text.match(/[^.!?]+[.!?]?[”"]?/g)||[text];return {id:`word-${en.toLowerCase().replace(/[^a-z0-9]/g,'-')}`,en,zh,...(pos?{pos}:{}),example:sentences.find(s=>s.toLowerCase().includes(en.toLowerCase()))?.trim()||text};})}));

@@ -9,9 +9,9 @@ const event=(kind,payload={},lessonId='day-01',id=crypto.randomUUID(),now=new Da
 test('normalization accepts case, curly apostrophes and terminal punctuation, not wrong words',()=>{
   assert.ok(isCorrect('  ANNA. ','Anna'));assert.ok(isCorrect('I’m Anna!',"I'm Anna"));assert.ok(!isCorrect('Annas','Anna'));
 });
-test('24 lessons have distinct question IDs, usable distractors and nonempty audio assets',async()=>{
-  assert.equal(lessons.length,24);const ids=new Set();
-  for(const l of lessons){assert.equal(l.questions.length,30);assert.equal(l.vocabulary.length,8);assert.equal(l.phrases.length,5);assert.equal(l.dialogue.length,6);assert.ok(l.reading.split(' ').length>=35);for(const q of l.questions){assert.ok(!ids.has(q.id));ids.add(q.id);if(q.options){assert.ok(q.options.includes(q.answer));assert.ok(new Set(q.options).size>=2);}if(q.type==='order')assert.deepEqual(q.tokens.slice().sort(),q.answer.split(' ').sort());}
+test('48 lessons have distinct question IDs, usable distractors and nonempty audio assets',async()=>{
+  assert.equal(lessons.length,48);const ids=new Set();
+  for(const l of lessons){assert.equal(l.questions.length,l.week<=5?30:l.week+25);assert.equal(l.vocabulary.length,8);assert.equal(l.phrases.length,5);assert.equal(l.dialogue.length,6);assert.ok(l.reading.split(' ').length>=35);for(const q of l.questions){assert.ok(!ids.has(q.id));ids.add(q.id);if(q.options){assert.ok(q.options.includes(q.answer));assert.ok(new Set(q.options).size>=2);}if(q.type==='order')assert.deepEqual(q.tokens.slice().sort(),q.answer.split(' ').sort());}
     for(const text of [...l.phrases.map(p=>p.en),...l.vocabulary.map(w=>w.en),l.dialogueText]){assert.ok(audioPath(text),'Missing audio: '+text);const file=new URL('../'+audioPath(text),import.meta.url);assert.ok((await stat(file)).size>1000,file.pathname);}
     assert.ok(reviewQuestions(l).length<=10);assert.ok(reviewQuestions(l).every(q=>l.questions.some(original=>original.id===q.id)));
   }

@@ -14,7 +14,7 @@ create table if not exists public.qe_events (
   seq bigint generated always as identity unique,
   family_id uuid not null,
   actor_id uuid not null references auth.users(id) on delete cascade,
-  lesson_id text not null check (lesson_id ~ '^day-(0[1-9]|1[0-9]|2[0-4])$'),
+  lesson_id text not null check (lesson_id ~ '^day-(0[1-9]|[1-3][0-9]|4[0-8])$'),
   kind text not null check (kind in ('answer','complete','review','review_answer','speaking','assignment','feedback')),
   payload jsonb not null default '{}'::jsonb check (jsonb_typeof(payload)='object' and octet_length(payload::text)<=16384),
   created_at timestamptz not null default now(),
