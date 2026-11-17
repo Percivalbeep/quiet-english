@@ -1,18 +1,16 @@
-# Current course speech
+# Current course audio
 
-The course player uses static MP3 files generated with installed macOS English voices.
-Vocabulary, example sentences and expressions use Samantha. Full conversations use
-Samantha for speaker A and Daniel for speaker B, with 0.55 seconds of padding after
-each turn. These recordings do not require the learner device to have browser TTS voices.
+Course playback uses pre-generated Fish Audio S2.1 Pro Free MP3 recordings,
+with prosody.speed=0.8 in every synthesis request. Vocabulary, examples and
+reading use the approved trial voice; dialogues use separate A/B reference voices.
+`app/fish-audio.js` records paths, engine, speed and dialogue speaker IDs.
+All files must pass decoding before the manifest is emitted. Keys are never part
+of the app, manifest, scripts, repository or published site.
 
-`app/system-audio.js` maps all 399 course utterances to their recordings and records
-conversation speaker assignments. All files are decoded before publication.
-Personal words absent from the course library still use browser speech, with an
-explicit timeout or failure message if that device cannot start speech.
+Generation: `node scripts/fish-course-jobs.mjs`, then provide FISH_KEY_FILE to
+`scripts/generate-fish-course.py`. It uses only the explicitly named free model,
+retries rate limits and can resume existing recordings.
 
-Regeneration: run `node scripts/system-audio-jobs.mjs`, then
-`python3 scripts/make-system-audio.py` and `python3 scripts/make-conversation-audio.py`
-on a Mac with Samantha, Daniel, and ffmpeg installed. Intermediate jobs are ignored.
-
-Older Qwen and day-numbered m4a assets are retained for history. They are not used
-by the current player. Qwen sources: https://github.com/QwenLM/Qwen3-TTS
+Old system/Qwen files are retained for history but are not selected by the current
+course player. User-created words outside the full course library still use device
+speech, since no private API key is exposed to the browser.

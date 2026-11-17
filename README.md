@@ -1,3 +1,10 @@
+# Current audio update
+
+All 628 existing course, passage and reading-word recordings now use Fish Audio at generation speed 0.8.
+Dialogue voices remain distinct; optional slower playback is additional to the generated speed.
+The previously published comparison page retains its original 0.9 trial samples for reference.
+No learning IDs, scores, completion events or account permissions change in this audio update.
+
 # 慢慢说 · Everyday English
 
 正式网址：[慢慢说](https://percivalbeep.github.io/quiet-english/)
@@ -23,7 +30,7 @@
 
 ## 当前发音与个人资料
 
-当前课程使用399段预先生成的系统英语录音，学习设备直接播放MP3，无需依赖Safari实时朗读。单词、例句和表达使用Samantha；24课完整对话按A/B角色使用Samantha和Daniel，换人留约0.55秒停顿。Qwen素材只保留历史，不再用于播放。用户自选而不在素材库中的词仍调用设备朗读，并有启动超时提示。
+当前课程使用628段 Fish Audio 预生成录音，生成语速统一0.8，学习设备直接播放MP3。单词、例句、整篇课文及课文词条均已覆盖，24课完整对话按A/B角色使用不同音色。Qwen素材只保留历史，不再用于播放。用户自选而不在素材库中的词仍调用设备朗读，并有启动超时提示。
 
 登录后在“我的空间 → 我的账号”修改昵称、上传或移除头像。头像在浏览器裁成192像素正方形JPEG，与昵称一起保存到仅本人可读写的 qe_profiles 表，不放入登录令牌、不新建公开存储桶、不修改成员角色权限。其他设备重新打开时读取本人资料。登录邮箱仍是登录标识，昵称不是独立登录名。
 
