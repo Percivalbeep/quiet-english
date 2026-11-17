@@ -1,8 +1,8 @@
-import {mistakeItems} from './practice.js';
+import {mistakeItems,stageProgress} from './practice.js';
 import {savedWords} from './vocabulary.js';
 import {profileCard,bindProfile,profileAvatar} from './profile.js';
 import {lessons,weeks} from './curriculum.js';
-import {localDay,lessonStats,reviewState,createEvent,LocalStore,SyncEngine,isCorrect,mergeEvents} from './core.js';
+import {localDay,lessonStats,reviewState,createEvent,LocalStore,SyncEngine,isCorrect,mergeEvents,completionEvents,recommendedLesson} from './core.js';
 import {CloudClient} from './cloud.js';
 import {LearningDialog} from './learning.js';
 import {AccountDialog,pendingInvite,joinPendingInvite} from './account.js';
@@ -23,17 +23,26 @@ const completeCount=()=>lessons.filter(l=>stats(l).complete).length;
 const dueLessons=()=>lessons.filter(l=>reviewState(l,events,learnerId())?.overdue);
 const name=()=>mode==='demo'?(role==='learner'?'学习者':'陪练老师'):cloud.profile?.display_name||cloud.session?.user?.user_metadata?.display_name||membership.display_name;
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),4500);}
-function loadEvents(){events=store.read().events;}
+function loadEvents(){
+  events=store.read().events;
+  if(role!=='learner')return;
+  const stamps=completionEvents(lessons,events,ownId(),familyId());
+  if(!stamps.length)return;
+  store.appendMany(stamps,mode==='cloud');events=store.read().events;
+}
 function persist(kind,lessonId,payload={}){
   const e=createEvent({actorId:ownId(),familyId:familyId(),lessonId,kind,payload});
-  store.append(e,mode==='cloud');loadEvents();
+  const added=[e];
+  // The final answer and its completion stamp share one durable local write.
+  if(kind==='answer')added.push(...completionEvents(lessons,mergeEvents(store.read().events,added),ownId(),familyId()));
+  store.appendMany(added,mode==='cloud');loadEvents();
   if(engine){syncState={...syncState,status:'pending'};engine.sync(true);}
   return e;
 }
 function selectedAssignment(){return events.filter(e=>e.kind==='assignment'&&e.payload.targetId===learnerId()&&e.payload.date===localDay()).at(-1);}
-function nextLesson(){const a=selectedAssignment();return lessons.find(l=>l.id===a?.lesson_id)||lessons.find(l=>!stats(l).complete)||lessons.at(-1);}
+function nextLesson(){return recommendedLesson(lessons,events,learnerId(),selectedAssignment());}
 function syncLabel(){if(mode==='demo')return '本机试用 · 未连接云端';return ({syncing:'正在同步…',synced:'云端已同步',pending:'本机已保存 · 等待上传',error:'同步未完成 · 本机已保存'})[syncState.status]||'准备连接';}
-function drawSync(){const el=$('#sync-pill');if(el){el.innerHTML=`<span class="sync-dot ${syncState.status}"></span>${escape(syncLabel())}`;el.title=syncState.error||'答题后立即上传；页面可见时每5秒检查更新。';}const pending=$('#pending-count');if(pending)pending.textContent=String(store?.read().outbox.length||0);}
+function drawSync(){const el=$('#sync-pill');if(el){el.innerHTML=`<span class="sync-dot ${syncState.status}"></span>${escape(syncLabel())}`;el.title=syncState.error||'答题后立即上传；页面可见时每5秒检查更新。';}const pending=$('#pending-count');if(pending)pending.textContent=String(store?.read().outbox.length||0);document.querySelectorAll('[data-summary-sync]').forEach(el=>{el.textContent=syncLabel()+(syncState.error?'：'+syncState.error:'');});}
 async function init(forceDemo=false){
   if(booting)return;booting=true;engine?.stop();const activeGeneration=++generation;
   try{
@@ -46,7 +55,7 @@ async function init(forceDemo=false){
       await cloud.refreshProfile();const result=await cloud.membership();membership=result.own;members=result.members;mode='cloud';role=membership.role;activeLearnerId=localStorage.getItem('quiet-english-active-learner:'+membership.user_id)||null;
       store=new LocalStore(localStorage,`quiet-english:${cloud.url}:${membership.user_id}`);
       loadEvents();syncState={status:'pending'};
-      engine=new SyncEngine({store,cloud,isVisible:()=>document.visibilityState==='visible',onState:s=>{if(activeGeneration!==generation)return;const memberChanged=cloud.membersSnapshot&&JSON.stringify(members)!==JSON.stringify(cloud.membersSnapshot);if(cloud.membersSnapshot)members=cloud.membersSnapshot;const changed=memberChanged||(s.events&&JSON.stringify(events)!==JSON.stringify(s.events));syncState=s;if(s.events)events=s.events;const editing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);if(changed&&!editing&&!lessonRun&&!$('#account-dialog').open)render();else drawSync();}});
+      engine=new SyncEngine({store,cloud,isVisible:()=>document.visibilityState==='visible',onState:s=>{if(activeGeneration!==generation)return;const memberChanged=cloud.membersSnapshot&&JSON.stringify(members)!==JSON.stringify(cloud.membersSnapshot);if(cloud.membersSnapshot)members=cloud.membersSnapshot;const before=events;syncState=s;if(s.events){loadEvents();if(store.read().outbox.length){syncState={...s,status:'pending'};engine.sync(true);}}const changed=memberChanged||JSON.stringify(before)!==JSON.stringify(events);const editing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);if(changed&&!editing&&!lessonRun&&!$('#account-dialog').open)render();else drawSync();}});
       render();engine.start();
     }else{
       mode='demo';membership=null;members=[];engine=null;syncState={status:'demo'};
@@ -65,11 +74,11 @@ function render(){
 }
 function heading(eyebrow,title,description,extra=''){return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${extra}</div>`;}
 function lessonCard(l){const s=stats(l);return `<button class="lesson-card" data-lesson="${l.id}"><span class="day-number">${String(l.day).padStart(2,'0')}</span><span class="lesson-card-copy"><small>DAY ${String(l.day).padStart(2,'0')} · 约${l.minutes}分钟</small><strong>${l.title}</strong><span>${l.goal}</span></span><span class="lesson-state ${s.complete?'done':''}">${s.complete?icon('check'):s.answered?`${s.answered}/${s.total}`:icon('arrow',18)}</span></button>`;}
-function todayView(){const l=nextLesson(),s=stats(l),due=dueLessons().length,a=selectedAssignment();return `${heading('A LITTLE, EVERY DAY',`${role==='teacher'?'看看今天的学习':'今天，也学一点吧。'}`,role==='teacher'?'学习记录来自学习者；静默练习和开口练习分别记录。':'戴上耳机就能开始。安静学，碎片时间也能慢慢积累。',`<span class="date-tag">${new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric',weekday:'long'}).format(new Date())}</span>`)}
+function todayView(){const l=nextLesson(),s=stats(l),stages=stageProgress(l,s),due=dueLessons().length,assignment=selectedAssignment(),a=assignment?.lesson_id===l.id?assignment:null;return `${heading('A LITTLE, EVERY DAY',`${role==='teacher'?'看看今天的学习':'今天，也学一点吧。'}`,role==='teacher'?'学习记录来自学习者；静默练习和开口练习分别记录。':'戴上耳机就能开始。安静学，碎片时间也能慢慢积累。',`<span class="date-tag">${new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric',weekday:'long'}).format(new Date())}</span>`)}
     ${mode==='demo'?'<div class="demo-banner">当前为本机试用，进度只保存在这个浏览器。连接账号后才能跨设备同步。<button data-action="account">连接学习空间 →</button></div>':''}
-    <div class="home-grid"><section class="hero-card"><div class="hero-top"><span class="chip">${icon('headphones',15)} 上班也能学 · 无需开口</span><span class="hero-week">WEEK ${String(l.week).padStart(2,'0')}</span></div><div class="hero-kicker">今日的小目标 / DAY ${String(l.day).padStart(2,'0')}</div><h2>${l.title}</h2><div class="hero-english">${l.headline}</div><p>${a?.payload.note?escape(a.payload.note):l.description}</p><div class="hero-bottom"><button class="primary" data-lesson="${l.id}">${s.complete?'再练一次':s.answered?'继续这一课':'开始今天的学习'} ${icon('arrow',18)}</button><span>3个学习阶段 · 建议25—35分钟<br><small>${s.complete&&s.additionalQuestions?'本课已完成，更新内容可选补练':'可随时暂停，进度会保存'}</small></span></div><div class="hero-decoration" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="headphone-art">${icon('headphones',108)}</div><span class="note note-one">♪</span><span class="note note-two">✦</span></div></section>
+    <div class="home-grid"><section class="hero-card"><div class="hero-top"><span class="chip">${icon('headphones',15)} 上班也能学 · 无需开口</span><span class="hero-week">WEEK ${String(l.week).padStart(2,'0')}</span></div><div class="hero-kicker">今日的小目标 / DAY ${String(l.day).padStart(2,'0')}</div><h2>${l.title}</h2><div class="hero-english">${l.headline}</div><p>${a?.payload.note?escape(a.payload.note):l.description}</p><div class="hero-bottom"><button class="primary" data-lesson="${l.id}">${s.complete?'再练一次':s.answered?'继续这一课':'开始今天的学习'} ${icon('arrow',18)}</button><span>3个学习阶段 · 建议25—35分钟<br><small>${s.complete?'本课已完成，更新内容可选补练':`已作答 ${s.answered}/${s.total} 题 · 继续未完成的部分`}</small></span></div><div class="hero-decoration" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="headphone-art">${icon('headphones',108)}</div><span class="note note-one">♪</span><span class="note note-two">✦</span></div></section>
     <section class="card progress-card"><div class="section-top"><h3>慢慢积累的你</h3>${icon('chart',19)}</div><div class="progress-ring" style="--progress:${completeCount()/lessons.length*100}%"><div><strong>${completeCount()}<small>/ ${lessons.length}</small></strong><span>已完成的入门课</span></div></div><div class="stat-pair"><span><b>${events.filter(e=>e.actor_id===learnerId()&&e.kind==='answer').length}</b>次答题</span><span><b>${lessons.filter(l=>stats(l).speaking).length}</b>课开口自记</span></div><a href="#progress" class="subtle-link">看看自己的变化 ${icon('arrow',15)}</a></section></div>
-    <div class="section-heading"><h2>今天的三个学习阶段</h2><span>先理解，再尝试，不着急。</span></div><div class="step-grid">${[['01','book','生词与记忆','认识本课生词，再通过选择、填空和听写巩固。','约6—8分钟'],['02','headphones','句子与用法','把词放进表达，练习填空与组句。','约6—8分钟'],['03','route','课文与检测','阅读课文、听情境对话，再回答理解问题。','约8—12分钟']].map(([n,i,t,d,time])=>`<button class="step-card" ${`data-lesson="${l.id}" data-study-entry="${n==='04'?'quiz':Number(n)-1}"`}><div class="step-top"><span>${n}</span>${icon(i,24)}</div><h3>${t}</h3><p>${d}</p><small>${time}</small></button>`).join('')}</div>
+    <div class="section-heading"><h2>今天的三个学习阶段</h2><span>先理解，再尝试，不着急。</span></div><div class="step-grid">${[['01','book','生词与记忆','认识本课生词，再通过选择、填空和听写巩固。','约6—8分钟'],['02','headphones','句子与用法','把词放进表达，练习填空与组句。','约6—8分钟'],['03','route','课文与检测','阅读课文、听情境对话，再回答理解问题。','约8—12分钟']].map(([n,i,t,d,time])=>`<button class="step-card" ${`data-lesson="${l.id}" data-study-entry="${n==='04'?'quiz':Number(n)-1}"`}><div class="step-top"><span>${n}</span>${icon(i,24)}</div><h3>${t}</h3><p>${d}</p><small>${time}<br>${stages[Number(n)-1].answered}/${stages[Number(n)-1].total} 题${stages[Number(n)-1].complete?' · 已完成':''}</small></button>`).join('')}</div>
     <div class="bottom-grid"><section class="card path-peek"><div class="section-top"><h3>这周，先从一句话开始</h3><a href="#path">完整路线 →</a></div>${lessons.filter(x=>x.week===l.week).slice(0,3).map(lessonCard).join('')}</section><section class="evening-card"><div class="eyebrow">WHEN YOU FEEL READY</div><h3>${icon('moon',22)} 下班后，再开口</h3><p>白天先听懂、读懂。方便时花2分钟，试着把今天的意思说出来。</p><blockquote>${l.speaking}</blockquote><small>选做，不影响白天任务完成。自我记录不等于口语达标。</small><button class="secondary" data-speaking="${l.id}">${s.speaking?'已记录一次开口尝试':'记录一次开口尝试'} ${icon('check',16)}</button></section></div>${feedbackView()}`;}
 function feedbackView(){const feedback=events.filter(e=>e.kind==='feedback'&&e.payload.targetId===learnerId()).slice(-3).reverse();return feedback.length?`<section class="card feedback-list"><h3>陪练留言</h3>${feedback.map(e=>`<article><small>${lessons.find(l=>l.id===e.lesson_id)?.title||'课程'} · ${escape(localDay(e.created_at))}</small><p>${escape(e.payload.text)}</p></article>`).join('')}</section>`:'';}
 function pathView(){return `${heading('YOUR LEARNING PATH','从生活里，一点点出发','八周内容按学习日排列。休息或漏学后继续，不需要赶进度。')}<div class="curriculum-note">白天：听辨、阅读、选答、打字　／　晚间：少量开口选做<br><small>起步课程用于建立习惯；每两周复盘后按实际掌握情况调整下一阶段。</small></div>${weeks.map((w,i)=>`<section class="week-section"><div class="week-title"><span class="week-badge ${w.color}">W${i+1}</span><div><h2>${w.title}</h2><p>${w.subtitle}</p></div><small>${lessons.filter(l=>l.week===i+1&&stats(l).complete).length} / 6 完成</small></div><div class="lesson-grid">${lessons.filter(l=>l.week===i+1).map(lessonCard).join('')}</div></section>`).join('')}`;}
@@ -107,9 +116,9 @@ function openAccount(view='login'){account.open(view);}
 function stopAudio(){learning.stopAudio();}
 function openLesson(id,review=false,entry=0){const lesson=lessons.find(l=>l.id===id);if(lesson)learning.open(lesson,review,entry);}
 const account=new AccountDialog({dialog:$('#account-dialog'),cloud,getMode:()=>mode,getName:name,getRole:()=>role,onLogout:()=>action('logout'),onSignedIn:async()=>{page='today';await init();}});
-const learning=new LearningDialog({dialog:$('#lesson-dialog'),getStats:stats,getEvents:()=>events,getUserId:learnerId,getRole:()=>role,save:persist,hasCompletion:l=>events.some(e=>e.actor_id===ownId()&&e.lesson_id===l.id&&e.kind==='complete'&&e.payload.curriculumVersion>=l.version),syncText:()=>mode==='demo'?'本机试用：记录只在这个浏览器中。':syncLabel(),onOpen:r=>{lessonRun=r;},onClose:()=>{lessonRun=null;render();},onComplete:()=>render(),toast});
+const learning=new LearningDialog({dialog:$('#lesson-dialog'),getStats:stats,getEvents:()=>events,getUserId:learnerId,getRole:()=>role,save:persist,hasCompletion:l=>events.some(e=>e.actor_id===ownId()&&e.lesson_id===l.id&&e.kind==='complete'),syncText:()=>mode==='demo'?'本机试用：记录只在这个浏览器中。':syncLabel(),onOpen:r=>{lessonRun=r;},onClose:()=>{lessonRun=null;render();},onComplete:()=>render(),toast});
 window.addEventListener('hashchange',()=>{page=nav().some(([key])=>key===location.hash.slice(1))?location.hash.slice(1):'today';render();});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')engine?.sync(true);else stopAudio();});
+document.addEventListener('visibilitychange',()=>{engine?.sync(true);if(document.visibilityState==='hidden')stopAudio();});
 window.addEventListener('online',()=>engine?.sync(true));
 window.addEventListener('storage',e=>{if(e.key===store?.key){try{loadEvents();if(!lessonRun)render();}catch(error){toast(error.message);}}if(mode==='cloud'&&e.key===cloud.sessionKey&&(!cloud.session||cloud.session.user.id!==membership?.user_id)){engine?.stop();location.reload();}});
 page=['today','path','words','review','progress','settings','mistakes'].includes(location.hash.slice(1))?location.hash.slice(1):'today';

@@ -1,6 +1,6 @@
 import {dictionaryEntry} from './dictionary.js';
 import {fishAudio} from './fish-audio.js';
-import {stageQuestions,interleave} from './practice.js';
+import {stageQuestions,interleave,stageProgress,firstUnanswered} from './practice.js';
 import {readingMarkup,savedWords,dictationQuestions,savedReviewQuestions} from './vocabulary.js';
 import {reviewQuestions} from './curriculum.js';
 import {isCorrect} from './core.js';
@@ -11,17 +11,26 @@ export class LearningDialog{
     Object.assign(this,{dialog,getStats,getRole,getEvents,getUserId,save,hasCompletion,syncText,onOpen,onClose,onComplete,toast});
     dialog.addEventListener('click',e=>{const popup=dialog.querySelector('.word-popup');if(popup&&!popup.contains(e.target)&&!e.target.closest('.reading-word'))popup.remove();});
     dialog.addEventListener('cancel',e=>{const popup=dialog.querySelector('.word-popup');if(popup){e.preventDefault();popup.remove();return;}if(this.run?.parent){e.preventDefault();this.back();}});
-    dialog.addEventListener('close',()=>{this.stopAudio();if(!this.run?.mistakes){this.paused=this.run;try{localStorage.setItem('quiet-stage:'+this.getUserId()+':'+this.run.lesson.id,String(this.run.tab));}catch{}}this.run=null;this.onClose();});
+    dialog.addEventListener('close',()=>{this.stopAudio();if(this.run&&!this.run.mistakes){this.rememberDictation();this.paused=this.run;try{localStorage.setItem('quiet-stage:'+this.getUserId()+':'+this.run.lesson.id,String(this.run.tab));}catch{}}this.run=null;this.onClose();});
   }
   open(lesson,review=false,entry=0){
     const saved=this.getStats(lesson),questions=review?reviewQuestions(lesson,{round:saved.reviews.length,weakQuestionIds:[...saved.retrievalLatest.values()].filter(e=>e.payload.wordId&&!e.payload.correct).map(e=>e.payload.questionId)}).concat(savedReviewQuestions(lesson,savedWords(this.getEvents(),this.getUserId(),lesson.id),saved.reviews.length)):lesson.questions;
-    const resumeIndex=!review&&!saved.complete?Math.max(0,questions.findIndex(q=>!saved.latest.has(q.id))):0;
+    const resumeIndex=!review?firstUnanswered(questions,saved):0;
     this.run={lesson,ownerUserId:this.getUserId?.(),review,questions,resumeIndex,index:review?0:resumeIndex,phase:review||entry==='quiz'?'quiz':'study',tab:Number.isInteger(entry)?entry:0,chosen:'',order:[],submitted:false,results:[],reviewSaved:false};
-    if(!review&&entry===0){try{const tab=Number(localStorage.getItem('quiet-stage:'+this.getUserId()+':'+lesson.id));if(Number.isInteger(tab)&&tab>=0&&tab<=2)this.run.tab=tab;}catch{}if(this.paused?.lesson.id===lesson.id&&this.paused.ownerUserId===this.getUserId?.())this.run=this.paused;}
+    if(!review&&entry===0){
+      const missing=stageProgress(lesson,saved).find(s=>!s.complete);
+      if(saved.answered&&!saved.complete&&missing)this.run.tab=missing.stage;
+      const paused=this.paused;
+      if(!saved.complete&&paused?.lesson.id===lesson.id&&paused.ownerUserId===this.getUserId?.()&&paused.phase==='quiz'&&!paused.practice){
+        this.run.tab=paused.tab;this.startStage(false);
+        if(this.run.questions[this.run.index]?.id===paused.questions[paused.index]?.id&&!paused.submitted){this.run.chosen=paused.chosen;this.run.order=paused.order;}
+      }
+    }
+    if(!review&&entry==='quiz'&&resumeIndex===questions.length)this.run.phase='summary';
     this.onOpen(this.run);this.render();this.dialog.showModal();
   }
   back(){this.rememberDictation();this.stopAudio();const r=this.run;if(r.mistakes){this.dialog.close();return;}if(r.parent){this.run=r.parent;this.onOpen(this.run);}else if(r.phase!=='study'){r.phase='study';r.chosen='';r.order=[];r.submitted=false;}else r.tab=Math.max(0,r.tab-1);this.render();}
-  startStage(){const r=this.run;this.stopAudio();const questions=stageQuestions(r.lesson,r.tab);const saved=this.getStats(r.lesson);Object.assign(r,{questions,phase:'quiz',stagePractice:true,practice:false,review:false,index:Math.max(0,questions.findIndex(q=>!saved.latest.has(q.id))),chosen:'',order:[],submitted:false,results:[],reviewSaved:false});this.render();}
+  startStage(render=true){const r=this.run;this.stopAudio();const questions=stageQuestions(r.lesson,r.tab);const index=firstUnanswered(questions,this.getStats(r.lesson));Object.assign(r,{questions,phase:index===questions.length?'summary':'quiz',stagePractice:true,practice:false,review:false,replaying:false,index,chosen:'',order:[],submitted:false,results:[],reviewSaved:false});if(render)this.render();}
   openMistakes(lesson,questions){this.open(lesson,false,0);this.run={lesson,questions:interleave(questions),phase:'quiz',index:0,tab:0,review:true,practice:true,mistakes:true,results:[],order:[],chosen:'',submitted:false};this.onOpen(this.run);this.render();}
   rememberDictation(){const r=this.run;if(!r?.parent||!r.practice||r.mistakes)return;try{localStorage.setItem('quiet-dictation:'+this.getUserId()+':'+r.lesson.id,JSON.stringify({index:r.index,chosen:r.chosen,order:r.order,submitted:r.submitted,results:r.results,phase:r.phase,ids:r.questions.map(q=>q.id)}));}catch{}}
   showWord(button){
@@ -76,6 +85,7 @@ export class LearningDialog{
     this.dialog.querySelector('[data-close]').onclick=()=>{if(r.parent)this.back();else this.dialog.close();};
     this.dialog.querySelector('[data-back]')?.addEventListener('click',()=>this.back());
     this.dialog.querySelector('[data-continue-stage]')?.addEventListener('click',()=>{r.tab=Math.min(2,r.tab+1);r.phase='study';this.render();});
+    this.dialog.querySelector('[data-next-missing]')?.addEventListener('click',()=>{const missing=stageProgress(r.lesson,this.getStats(r.lesson)).find(s=>!s.complete);if(missing){r.tab=missing.stage;r.phase='study';this.render();this.dialog.scrollTop=0;}});
     this.dialog.querySelectorAll('[data-audio]').forEach(b=>b.onclick=()=>this.play(b.dataset.audio,b));
     this.dialog.querySelectorAll('[data-study-tab]').forEach(b=>b.onclick=()=>{this.stopAudio();r.tab=Number(b.dataset.studyTab);this.render();this.dialog.scrollTop=0;});
     this.dialog.querySelectorAll('[data-dictation]').forEach(b=>b.onclick=()=>this.startDictation());
@@ -87,21 +97,22 @@ export class LearningDialog{
     this.dialog.querySelectorAll('[data-remove-token]').forEach(b=>b.onclick=()=>{if(r.submitted)return;r.order.splice(Number(b.dataset.removeToken),1);this.render();});
     this.dialog.querySelector('#typed-answer')?.addEventListener('input',e=>{r.chosen=e.target.value;this.rememberDictation();});
     this.dialog.querySelector('#answer-form')?.addEventListener('submit',e=>this.submit(e));
-    this.dialog.querySelector('#next-question')?.addEventListener('click',()=>{this.stopAudio();r.index++;r.chosen='';r.order=[];r.submitted=false;if(r.index===r.questions.length)this.finish();else this.render();this.dialog.scrollTop=0;});
+    this.dialog.querySelector('#next-question')?.addEventListener('click',()=>{this.stopAudio();r.index=r.review||r.replaying?r.index+1:firstUnanswered(r.questions,this.getStats(r.lesson));r.chosen='';r.order=[];r.submitted=false;if(r.index>=r.questions.length)this.finish();else this.render();this.dialog.scrollTop=0;});
     this.dialog.querySelector('#finish-lesson')?.addEventListener('click',()=>{if(r.parent)this.back();else this.dialog.close();});
-    this.dialog.querySelector('#retry-lesson')?.addEventListener('click',()=>{r.phase='quiz';r.index=0;r.chosen='';r.order=[];r.submitted=false;r.results=[];r.reviewSaved=false;this.render();});
+    this.dialog.querySelector('#retry-lesson')?.addEventListener('click',()=>{r.phase='quiz';r.replaying=true;r.index=0;r.chosen='';r.order=[];r.submitted=false;r.results=[];r.reviewSaved=false;this.render();});
     this.dialog.querySelector('#save-summary')?.addEventListener('click',()=>this.finish());
   }
   audioButton(text,label='▶ 听一听'){return `<button class="audio-button" data-audio="${esc(text)}" aria-label="播放：${esc(text)}">${label}</button>`;}
   studyView(){
     const r=this.run,l=r.lesson;
+    const stages=stageProgress(l,this.getStats(l)),stageDone=stages[r.tab]?.complete;
     let body='';
     if(r.tab===0)body=`<h2 id="lesson-heading">先把词语学扎实。</h2><p class="muted">今天8个关键词。听发音、认意思、看例句；熟词也会在新场景里复用。接下来会分别练词义、听辨和拼写。</p><div class="vocab-study-grid">${l.vocabulary.map((w,i)=>`<article class="vocab-study-card"><div><small>0${i+1}</small>${this.audioButton(w.en)}</div><strong lang="en">${esc(w.en)}</strong><p>${esc(w.zh)}</p><blockquote lang="en">${esc(w.example)}</blockquote></article>`).join('')}</div>`;
     if(r.tab===1)body=`<h2 id="lesson-heading">把词，放进生活里。</h2><p class="muted">今天5个表达。留意关键词在句子里的位置，先理解再尝试回忆。</p><div class="phrase-list">${l.phrases.map((p,i)=>`<article><span class="phrase-number">0${i+1}</span><div><strong lang="en">${esc(p.en)}</strong><p>${esc(p.zh)}</p></div>${this.audioButton(p.en,'▶ 听一句')}</article>`).join('')}</div><section class="phrase-list"><h3>本课生词，在句子中再见一次</h3>${l.vocabulary.map(w=>`<article><div><strong>${esc(w.en)} · ${esc(w.zh)}</strong><p lang="en">${esc(w.example)}</p></div>${this.audioButton(w.example,'▶ 听例句')}</article>`).join('')}</section><div class="lesson-tip"><strong>一点点语言规律</strong><br>${esc(l.tip)}</div>`;
     if(r.tab===-1)body=`<h2 id="lesson-heading">听出一句话的来回。</h2><p class="muted">先听完整段，抓住正在做什么；再分句看。听不懂时可以重听，不需要在工位开口。</p><div class="dialogue-play">${this.audioButton(l.dialogueText,'▶ 听整段情境对话')}<label class="slow-toggle"><input id="slow-audio" type="checkbox"> 再慢一点听</label></div><div class="dialogue-transcript">${l.dialogue.map(([speaker,en,zh])=>`<article class="speaker-${speaker.toLowerCase()}"><span>${speaker}</span><div><p lang="en">${esc(en)}</p><details><summary>看中文意思</summary><small>${esc(zh)}</small></details></div></article>`).join('')}</div>`;
     if(r.tab===2)body=`<h2 id="lesson-heading">读懂一小段生活信息。</h2><p class="muted">带着三个问题阅读：谁、要做什么、有哪些关键信息？不认识的词可返回单词页查看。</p><details class="translation-help"><summary>先听情境对话，看看这些表达怎样使用</summary><p class="small-note">A、B使用不同音色，换人时有停顿。</p>${this.audioButton(l.dialogueText,'▶ 听情境对话（0.8语速）')}${l.dialogue.map(([speaker,en,zh])=>`<p lang="en">${speaker}：${esc(en)}</p><small>${esc(zh)}</small>`).join('')}</details><div class="reading-audio">${this.audioButton(l.reading,'▶ 听课文（0.8语速）')}</div><div class="reading-passage" lang="en">${readingMarkup(l.reading)}</div><details class="translation-help"><summary>需要帮助时，看中文参考</summary><p>${esc(l.translation)}</p></details><div class="lesson-tip">接下来通过课文理解和听力问题检查掌握情况。可以随时暂停，提交过的答案会保存。</div>`;
     const personal=savedWords(this.getEvents?.()||[],this.getUserId?.(),l.id);
-    return `<div class="study-tabs" role="tablist">${tabs.map((t,i)=>`<button role="tab" aria-selected="${i===r.tab}" data-study-tab="${i}">${t}</button>`).join('')}</div>${body}${r.tab===0?`<div class="dictation-entry"><p>听发音，回忆拼写；可随时返回单词列表，再接着听写。</p><button class="secondary" data-dictation>听写本课单词（${dictationQuestions(l,[...l.vocabulary,...personal]).length}词）</button></div>`:''}<div class="study-actions">${r.tab>0?'<button class="secondary wide" data-back>← 返回上一部分</button>':''}${r.tab<2?`<button class="primary wide" id="next-study">下一段：${tabs[r.tab+1]} →</button><button class="text-button wide" data-start-quiz>练一练这一部分</button>`:`<button class="primary wide" data-start-quiz>开始课文理解与听力检测 →</button>`}</div><p class="small-note">建议25—35分钟，包含复听、回忆和复习；可拆成4次短练。${this.getRole()==='teacher'?'陪练预览不会写入学习者成绩。':''}</p>`;
+    return `<div class="study-tabs" role="tablist">${tabs.map((t,i)=>`<button role="tab" aria-selected="${i===r.tab}" data-study-tab="${i}">${t}<small>${stages[i].answered}/${stages[i].total}题${stages[i].complete?' ✓':''}</small></button>`).join('')}</div>${body}${r.tab===0?`<div class="dictation-entry"><p>选做听写，单独记录；本部分的正式练习在下方。</p><button class="secondary" data-dictation>听写本课单词（${dictationQuestions(l,[...l.vocabulary,...personal]).length}词）</button></div>`:''}<div class="study-actions">${r.tab>0?'<button class="secondary wide" data-back>← 返回上一部分</button>':''}${stageDone&&r.tab<2?`<button class="primary wide" id="next-study">下一段：${tabs[r.tab+1]} →</button>`:''}<button class="${stageDone?'secondary':'primary'} wide" data-start-quiz>${stageDone?'查看本部分完成情况':['开始生词练习','开始句子用法练习','开始课文理解与听力检测'][r.tab]} →</button></div><p class="small-note">完成三个部分的练习后计为整课完成；浏览内容和选做听写单独记录。建议25—35分钟。${this.getRole()==='teacher'?'陪练预览不会写入学习者成绩。':''}</p>`;
   }
   quizView(){
     const r=this.run,q=r.questions[r.index];let input='';
@@ -129,6 +140,10 @@ export class LearningDialog{
   }
   summaryView(){
     const r=this.run,correct=r.results.filter(x=>x.correct).length;
-    return `<div class="summary-art">${r.saveError?'↻':'✓'}</div><h2 id="lesson-heading">${r.saveError?'还差最后一步保存。':'词语和场景，又熟悉了一点。'}</h2><p class="muted">${this.getRole()==='teacher'?'这是陪练预览，不写入学习者成绩。':r.mistakes?'本次错题练习已完成；历史错误继续保留。':r.practice?'本次完成了单词听写；听写结果已单独记录。':r.review?'本次完成了间隔回忆。':r.stagePractice?'本阶段练习已完成，可以返回复习或继续下一部分。':'这次完成了练习。'} 本次${correct} / ${r.results.length}题答对。</p>${r.saveError?`<p class="error-text">${esc(r.saveError)}</p><button class="primary wide" id="save-summary">重新保存</button>`:`<div class="lesson-tip">${r.practice?'可随时回本课继续听写，收藏的生词会保留。':r.review?(correct/r.results.length>=.8?'本次较熟悉，下次复习间隔将延长。':'有些内容还不熟，约1天后再见。'):'新增词语已进入单词本，可以按学过的课程回看。静默练习不等于已经会说，方便时再尝试开口。'}<br><small>${esc(this.syncText())}</small></div><div class="summary-evening"><span>☾ 晚间开口卡 · 选做</span><p>${esc(r.lesson.speaking)}</p></div>${r.parent?'<button class="primary wide" data-back>返回刚才的学习</button>':r.stagePractice&&r.tab<2?'<button class="primary wide" data-continue-stage>继续下一部分 →</button>':''}<button class="secondary wide" data-back>${r.mistakes?'返回错题本':'返回本部分学习'}</button><button class="primary wide" id="finish-lesson">收好今天的进步 ✓</button><button class="text-button wide" id="retry-lesson">再练一遍</button>`}`;
+    const stats=this.getStats(r.lesson),stages=stageProgress(r.lesson,stats),missing=stages.filter(s=>!s.complete);
+    const normal=!r.review&&!r.practice;
+    const title=r.saveError?'还差最后一步保存。':normal?(stats.complete?'本课已完成，进步已保存。':'本部分已保存，整课还有练习。'):'这次练习已保存。';
+    const detail=this.getRole()==='teacher'?'这是陪练预览，不写入学习者成绩。':normal?`整课已作答 ${stats.answered} / ${stats.total} 题。${stats.complete?'可以返回首页，继续下一课。':'尚未完成：'+missing.map(s=>tabs[s.stage]).join('、')+'。已做的题目无需重做。'}`:r.mistakes?'本次错题练习已完成；历史错误继续保留。':r.practice?'单词听写单独记录，不代替整课练习。':'本次完成了间隔回忆。';
+    return `<div class="summary-art">${r.saveError?'↻':normal&&!stats.complete?'…':'✓'}</div><h2 id="lesson-heading">${title}</h2><p class="muted">${esc(detail)}</p>${r.results.length?`<p>本次 ${correct} / ${r.results.length} 题答对。</p>`:''}${normal?`<div class="lesson-tip">${stages.map(s=>`${tabs[s.stage]}：${s.answered}/${s.total}题${s.complete?' ✓':''}`).join('<br>')}</div>`:''}${r.saveError?`<p class="error-text">${esc(r.saveError)}</p><button class="primary wide" id="save-summary">重新保存</button>`:`<div class="lesson-tip">${r.practice?'可随时回本课继续听写，收藏的生词会保留。':r.review?(correct/r.results.length>=.8?'本次较熟悉，下次复习间隔将延长。':'有些内容还不熟，约1天后再见。'):'已提交的答案会保留。做错的内容进入错题本，后续可以单独巩固。'}<br><small data-summary-sync>${esc(this.syncText())}</small></div><div class="summary-evening"><span>☾ 晚间开口卡 · 选做</span><p>${esc(r.lesson.speaking)}</p></div>${r.parent?'<button class="primary wide" data-back>返回刚才的学习</button>':normal&&!stats.complete?`<button class="primary wide" data-next-missing>继续尚未完成的部分 →</button>`:''}<button class="secondary wide" data-back>${r.mistakes?'返回错题本':'返回本部分学习'}</button><button class="${normal&&!stats.complete?'secondary':'primary'} wide" id="finish-lesson">${r.parent?'返回刚才的学习':'保存并返回首页'}</button><button class="text-button wide" id="retry-lesson">主动重练本部分</button>`}`;
   }
 }

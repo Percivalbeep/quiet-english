@@ -18,6 +18,6 @@ test('dictation covers every lesson word, merges saved words and hides the targe
 
 test('standalone dictation renders reading controls and does not emit lesson completion or interval review',async()=>{
  const {LearningDialog}=await import('../app/learning.js');const writes=[];
- const d=new LearningDialog({dialog:{addEventListener(){},scrollTop:0},getEvents:()=>[],getUserId:()=> 'u',getRole:()=> 'learner',syncText:()=>'',save:(...args)=>writes.push(args),onComplete(){},onOpen(){}});
+ const d=new LearningDialog({dialog:{addEventListener(){},scrollTop:0},getStats:l=>lessonStats(l,[],'u'),getEvents:()=>[],getUserId:()=> 'u',getRole:()=> 'learner',syncText:()=>'',save:(...args)=>writes.push(args),onComplete(){},onOpen(){}});
  d.run={lesson:lessons[0],tab:2};assert.match(d.studyView(),/save-reading-word/);d.render=()=>{};d.startDictation();assert.equal(d.run.questions.length,8);assert.match(d.quizView(),/data-audio/);d.finish();assert.equal(writes.length,0);assert.match(d.summaryView(),/单词听写/);
 });

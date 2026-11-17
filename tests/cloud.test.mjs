@@ -70,3 +70,11 @@ test('expired tokens refresh once for concurrent requests and survive reload',as
 test('remote cursor only commits after successful local reconciliation',async()=>{
   const api=service(),disk=memory(),cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},disk,api.fetcher);await cloud.signIn('student@test.local','test-only');await cloud.pushEvents([createEvent({actorId:'student',familyId:'family',lessonId:'day-01',kind:'complete'})]);assert.equal((await cloud.pullEvents()).length,1);assert.equal(cloud.cursor,0);cloud.commitCursor();assert.equal(cloud.cursor,1);assert.equal((await cloud.pullEvents()).length,0);
 });
+test('full reconciliation pages through more than 1000 rows and catches a late lower-sequence commit',async()=>{
+  const cloud=new CloudClient({supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'sb_publishable_test'},memory(),async()=>assert.fail('network not used'));
+  const rows=Array.from({length:1201},(_,i)=>({id:'e'+(i+1),seq:i+1}));let late=false,memberReads=0;
+  cloud.membership=async()=>{memberReads++};
+  cloud.rest=async path=>{const cursor=Number(path.match(/seq=gt\.(\d+)/)[1]);return rows.filter(e=>e.seq>cursor&&(late||e.seq!==3)).slice(0,500)};
+  const first=await cloud.pullEvents({full:true});assert.equal(first.length,1200);cloud.commitCursor();assert.equal(cloud.cursor,1201);
+  late=true;assert.equal((await cloud.pullEvents()).length,0);assert.equal((await cloud.pullEvents({full:true})).length,1201);assert.ok(memberReads);
+});

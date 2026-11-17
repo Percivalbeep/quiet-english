@@ -49,6 +49,19 @@ export function reviewState(lesson, events, userId, now = Date.now()) {
 export function createEvent({actorId,familyId,lessonId,kind,payload={},now=new Date(),id=crypto.randomUUID()}) {
   return {id, actor_id:actorId, family_id:familyId, lesson_id:lessonId, kind, payload, created_at:now.toISOString()};
 }
+export function unfinishedLessons(lessons,events,userId) {
+  return lessons.filter(l=>{const s=lessonStats(l,events,userId);return s.currentContentComplete&&!events.some(e=>e.actor_id===userId&&e.lesson_id===l.id&&e.kind==='complete');});
+}
+export function completionEvents(lessons,events,actorId,familyId) {
+  return unfinishedLessons(lessons,events,actorId).map(l=>{
+    const last=events.filter(e=>e.actor_id===actorId&&e.lesson_id===l.id&&e.kind==='answer').at(-1);
+    return createEvent({actorId,familyId,lessonId:l.id,kind:'complete',now:new Date(last.created_at),payload:{silentPractice:true,curriculumVersion:l.version,questions:l.questions.length,recoveredFromAnswers:true}});
+  });
+}
+export function recommendedLesson(lessons,events,userId,assignment) {
+  const assigned=lessons.find(l=>l.id===assignment?.lesson_id);
+  return assigned&&!lessonStats(assigned,events,userId).complete?assigned:lessons.find(l=>!lessonStats(l,events,userId).complete)||lessons.at(-1);
+}
 export class LocalStore {
   constructor(storage, key) { this.storage=storage; this.key=key; }
   read() {
@@ -63,9 +76,12 @@ export class LocalStore {
     catch { throw new Error('本机空间不足或浏览器禁止保存。本次操作尚未保存，请导出备份后重试。'); }
   }
   append(event, pending=true) {
+    this.appendMany([event],pending);
+  }
+  appendMany(added, pending=true) {
     const data=this.read();
-    data.events=mergeEvents(data.events,[event]);
-    if (pending&&!data.outbox.includes(event.id)) data.outbox.push(event.id);
+    data.events=mergeEvents(data.events,added);
+    if(pending)data.outbox=[...new Set([...data.outbox,...added.map(e=>e.id)])];
     this.write(data);
   }
   reconcile(remote, acknowledged=[]) {
@@ -85,9 +101,16 @@ export class SyncEngine {
     this.running=null; this.timer=null; this.failures=0; this.nextRetry=0;
   }
   sync(force=false) {
-    if (this.running) return this.running;
+    if(this.stopped)return Promise.resolve();
+    if (this.running) {this.requested=true;this.fullRequested||=force;return this.running;}
     if (!force && (!this.isVisible() || Date.now()<this.nextRetry)) return Promise.resolve();
-    this.running=this.perform(force).finally(()=>{this.running=null;});
+    this.fullRequested=force;
+    this.running=Promise.resolve().then(async()=>{
+      do{
+        this.requested=false;const full=this.fullRequested;this.fullRequested=false;
+        if(!await this.perform(full))break;
+      }while(!this.stopped&&(this.requested||this.store.read().outbox.length));
+    }).finally(()=>{this.running=null;});
     return this.running;
   }
   async perform(full=false) {
@@ -98,19 +121,24 @@ export class SyncEngine {
       for(let i=0;i<pending.length;i+=100) {
         const batch=pending.slice(i,i+100);
         await this.cloud.pushEvents(batch);
+        if(this.stopped)return false;
         this.store.reconcile([],batch.map(e=>e.id));
       }
       const remote=await this.cloud.pullEvents({full});
+      if(this.stopped)return false;
       const state=this.store.reconcile(remote);
       this.cloud.commitCursor?.();
       this.failures=0; this.nextRetry=0;
       this.onState({status:state.outbox.length?'pending':'synced',at:Date.now(),events:state.events,pending:state.outbox.length});
+      return true;
     } catch(error) {
+      if(this.stopped)return false;
       this.failures++;
       this.nextRetry=Date.now()+Math.min(60000,5000*2**(this.failures-1));
       this.onState({status:'error',error:error.message,pending:this.store.read().outbox.length});
+      return false;
     }
   }
-  start() { this.stop(); this.sync(true); this.timer=setInterval(()=>this.sync(),5000); }
-  stop() { clearInterval(this.timer); this.timer=null; }
+  start() { clearInterval(this.timer);this.stopped=false; this.sync(true); this.timer=setInterval(()=>this.sync(),5000); }
+  stop() { clearInterval(this.timer); this.timer=null;this.stopped=true; }
 }
