@@ -5,10 +5,16 @@ export function localDay(date = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 export function normalize(value) {
-  return String(value).normalize('NFKC').toLowerCase().replace(/[’‘]/g,"'").replace(/[.,!?。！？，]/g,'').replace(/\s+/g,' ').trim();
+  return String(value).normalize('NFKC').toLowerCase().replace(/[’‘]/g,"'").replace(/(?<=\d)\.(?=\d)/g,'<decimal>').replace(/[.,!?。！？，:;"“”]/g,' ').replaceAll('<decimal>','.').replace(/\s+/g,' ').trim();
 }
 export function isCorrect(answer, expected) {
-  return (Array.isArray(expected) ? expected : [expected]).some(x => normalize(x) === normalize(answer));
+  const canonical=value=>{
+    let text=normalize(value);
+    const contractions={"i'm":"i am","you're":"you are","we're":"we are","they're":"they are","i've":"i have","you've":"you have","we've":"we have","they've":"they have","i'll":"i will","you'll":"you will","he'll":"he will","she'll":"she will","we'll":"we will","they'll":"they will","don't":"do not","doesn't":"does not","didn't":"did not","can't":"cannot","won't":"will not","isn't":"is not","aren't":"are not","wasn't":"was not","weren't":"were not","haven't":"have not","hasn't":"has not","couldn't":"could not","wouldn't":"would not","shouldn't":"should not"};
+    text=text.replace(/\b(it|he|she|that|there|what|who|here)'s\s+(?=been\b|got\b)/g,'$1 has ').replace(/\b(it|he|she|that|there|what|who|here)'s\b/g,'$1 is').replace(/\b[a-z]+'[a-z]+\b/g,w=>contractions[w]||w).replace(/\bcan not\b/g,'cannot');
+    return text;
+  };
+  return (Array.isArray(expected) ? expected : [expected]).some(x => canonical(x) === canonical(answer));
 }
 export function mergeEvents(...groups) {
   const map = new Map();
