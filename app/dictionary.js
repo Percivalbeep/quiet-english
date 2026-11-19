@@ -21,7 +21,33 @@ const irregular={goes:'go',am:'be',are:'be',is:'be',was:'be',does:'do',has:'have
 for(const l of lessons)for(const w of l.vocabulary)if(w.pos&&!entries.has(w.en.toLowerCase()))entries.set(w.en.toLowerCase(),{word:w.en,pos:w.pos,meaning:w.zh});
 for(const [pos,data] of Object.entries(extensionGlossary))for(const pair of data.trim().split(/\s+/)){const [word,meaning]=pair.split('=');if(!entries.has(word.toLowerCase()))entries.set(word.toLowerCase(),{word,pos,meaning:meaning.replaceAll('_',' ')});}
 Object.assign(irregular,extensionIrregular);
-export function dictionaryEntry(word,lesson){const key=word.toLowerCase();let entry=entries.get(key);if(!entry){const root=irregular[key]||[key.replace(/s$/,''),key.replace(/ed$/,''),key.replace(/ing$/,'')].find(k=>entries.has(k));entry=entries.get(root);}
- const own=lesson?.vocabulary.find(w=>w.en.toLowerCase()===key);const anywhere=own||lessons.flatMap(l=>l.vocabulary).find(w=>w.en.toLowerCase()===key);
- const sentence=lesson?.reading.split(/(?<=[.!?])\s+/).find(s=>new RegExp('(^|[^A-Za-zÀ-ÿ])'+key+'(?=$|[^A-Za-zÀ-ÿ])','i').test(s))||anywhere?.example||'';
- return {word,pos:own?.pos||entry?.pos||anywhere?.pos||'',meaning:own?.zh||entry?.meaning||anywhere?.zh||'暂无课程释义',example:sentence};}
+// Only resolve to known course dictionary headwords; unknown words stay intact.
+const lemmaOverrides={...extensionIrregular,gives:'give',gave:'give',given:'give',am:'be',is:'be',are:'be',was:'be',were:'be',been:'be',being:'be',has:'have',had:'have',does:'do',did:'do',done:'do',went:'go',gone:'go',goes:'go',took:'take',taken:'take',bought:'buy',brought:'bring',made:'make',met:'meet',said:'say',saw:'see',seen:'see',heard:'hear',found:'find',felt:'feel',knew:'know',known:'know',told:'tell',thought:'think',understood:'understand',wrote:'write',written:'write',spoke:'speak',spoken:'speak',ate:'eat',eaten:'eat',paid:'pay',kept:'keep',left:'leave',smaller:'small',smallest:'small',larger:'large',largest:'large',better:'good',best:'good',men:'man',women:'woman',children:'child',feet:'foot',teeth:'tooth'};
+export function wordLemma(word){
+ const key=String(word||'').normalize('NFKC').toLowerCase().trim();
+ if(lemmaOverrides[key])return entries.has(lemmaOverrides[key])?lemmaOverrides[key]:key;
+ const direct=entries.get(key);
+ // Preserve lexical entries such as morning, clothes, business and contractions.
+ if(direct)return key;
+ const candidates=[];
+ if(/ies$/.test(key))candidates.push(key.slice(0,-3)+'y');
+ if(/(?:ches|shes|xes|zes|sses|ses)$/.test(key))candidates.push(key.slice(0,-2));
+ if(/s$/.test(key)&&!/(ss|us)$/.test(key))candidates.push(key.slice(0,-1));
+ if(/ied$/.test(key))candidates.push(key.slice(0,-3)+'y');
+ if(/ed$/.test(key)){const stem=key.slice(0,-2);candidates.push(key.slice(0,-1),stem);if(/([b-df-hj-np-tv-z])\1$/.test(stem))candidates.push(stem.slice(0,-1));}
+ if(/ing$/.test(key)){const stem=key.slice(0,-3);candidates.push(stem,stem+'e');if(/([b-df-hj-np-tv-z])\1$/.test(stem))candidates.push(stem.slice(0,-1));}
+ return candidates.find(k=>entries.has(k))||key;
+}
+const courseForms=new Map();
+for(const l of lessons)for(const token of l.reading.match(/[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[’'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*/g)||[]){const lemma=wordLemma(token);if(!courseForms.has(lemma))courseForms.set(lemma,new Set([lemma]));courseForms.get(lemma).add(token.toLowerCase());}
+const commonForms={give:['give','gives','gave','given','giving'],go:['go','goes','went','gone','going'],be:['be','am','is','are','was','were','been','being'],have:['have','has','had','having'],do:['do','does','did','done','doing'],take:['take','takes','took','taken','taking'],write:['write','writes','wrote','written','writing'],make:['make','makes','made','making'],buy:['buy','buys','bought','buying'],see:['see','sees','saw','seen','seeing'],speak:['speak','speaks','spoke','spoken','speaking']};
+export function dictionaryEntry(word,lesson){
+ const key=word.toLowerCase(),lemma=wordLemma(word);let entry=entries.get(lemma)||entries.get(key);
+ if(!entry){const root=irregular[key]||[key.replace(/s$/,''),key.replace(/ed$/,''),key.replace(/ing$/,'')].find(k=>entries.has(k));entry=entries.get(root);}
+ const own=lesson?.vocabulary.find(w=>w.en.toLowerCase()===lemma);const anywhere=own||lessons.flatMap(l=>l.vocabulary).find(w=>w.en.toLowerCase()===lemma);
+ const tokens=s=>s.match(/[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[’'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*/g)||[];
+ const sentences=lesson?.reading.split(/(?<=[.!?])\s+/)||[];
+ const sentence=sentences.find(s=>tokens(s).some(t=>t.toLowerCase()===key))||sentences.find(s=>tokens(s).some(t=>wordLemma(t)===lemma))||anywhere?.example||'';
+ const forms=[...new Set([...(commonForms[lemma]||courseForms.get(lemma)||[lemma]),...tokens(lesson?.reading||'').filter(t=>wordLemma(t)===lemma).map(t=>t.toLowerCase())])];
+ return {word,lemma,forms,pos:own?.pos||entry?.pos||anywhere?.pos||'',meaning:own?.zh||entry?.meaning||anywhere?.zh||'暂无课程释义',example:sentence};
+}
